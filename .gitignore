@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Virtual environments created when running the spike
+spike/v*/
+
+# Canary run output
+results/
+*.log
+
+.DS_Store

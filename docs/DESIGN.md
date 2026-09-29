@@ -173,24 +173,25 @@ opentelemetry-instrumentation @ git+https://github.com/open-telemetry/openteleme
 - **이슈**: 상태가 바뀌면 이 저장소에 이슈를 만들거나 갱신합니다. 라벨은 `sdk/<name>`, `otel/<version>`입니다.
 - **업스트림 보고**: 사람이 재현을 확인한 뒤, 재현 코드, 버전, 원인 커밋을 담은 템플릿으로 직접 보고합니다. 각 저장소의 기여 규칙(이슈 먼저, CLA/DCO 등)을 따릅니다.
 
-## 11. 저장소 구조 (제안)
+## 11. 저장소 구조
 
 ```
 otel-canary/
-├── canary/
-│   ├── cli.py          # canary run / canary report
-│   ├── matrix.py       # 버전 계산, 셀 목록 생성
-│   ├── install.py      # uv venv·install, override 파일 생성 (extras 보존)
-│   ├── receivers.py    # 가짜 OTLP HTTP / gRPC 수신기
+├── src/otel_canary/
+│   ├── cli.py          # otel-canary run
+│   ├── runner.py       # 셀 하나: venv → 설치 → 수신기 → 어댑터 → 판정
+│   ├── install.py      # uv venv·install, BLOCKED/INFRA 구분, 버전 스냅샷
+│   ├── receivers.py    # 가짜 OTLP/HTTP 수신기 (gzip, 장애 주입, GET 응답)
 │   ├── classify.py     # PASS / FAIL / DEGRADED / BLOCKED / INFRA 판정
-│   └── adapters/       # SDK별 스모크 시나리오
-├── report/             # 정적 대시보드 생성기와 템플릿
-├── .github/workflows/
-│   ├── nightly.yml     # 매일 매트릭스 실행
-│   └── pages.yml       # 대시보드 배포
+│   └── adapters/       # 셀의 venv에서 도는 SDK별 시나리오 (adapter_<name>.py + _runner.py)
+├── tests/              # 단위 테스트 + integration(실제 설치, 골든 케이스)
+├── .github/workflows/ci.yml
 ├── spike/              # M0 검증 코드 (버려도 됨)
-└── docs/DESIGN.md
+└── docs/
 ```
+
+- M2에서 `matrix.py`(버전 계산), 리포트 생성기, `nightly.yml`이 추가됩니다.
+- 어댑터 파일 이름에 `adapter_` 접두사를 붙인 이유: 어댑터 디렉터리가 `sys.path` 맨 앞에 오기 때문에, `phoenix.py`라는 파일이 있으면 진짜 `phoenix` 패키지를 가립니다.
 
 ## 12. GitHub Actions 설계
 
@@ -205,7 +206,7 @@ otel-canary/
 | 단계 | 기간 | 내용 | 수용 기준 |
 |---|---|---|---|
 | **M0** | 완료 | 스파이크: 알려진 사례 재현, main 설치 검증 | §17 |
-| **M1** | 1주차 | CLI, HTTP 수신기, 어댑터 2개(Phoenix, Langfuse), 로컬 실행 | 골든 케이스 통과: phoenix-otel 0.17.1 × 1.45 = `FAIL`, 0.17.2 × 1.45 = `PASS` |
+| **M1** | 완료 (2026-09-29) | CLI, HTTP 수신기, 어댑터 3개(Phoenix, Langfuse, traceloop), 로컬 실행 | 골든 케이스 4개 통과 (`tests/test_golden.py`) |
 | **M2** | 2주차 | gRPC 수신기, 어댑터 5개, nightly Actions, JSON 결과, 정적 대시보드, 상태 변화 이슈 | 3일 연속 무인 실행, 가짜 경보 0건 |
 | **M3** | 3~4주차 | `force` 모드와 `BLOCKED`, main 커밋 범위 첨부, 배지 | Weave·Logfire 상한이 여전히 필요한지 판정 |
 | **M4** | 이후 | 정적 결합 스캔, 자동 bisect, 어댑터 확장, 케이스 스터디 글 | — |

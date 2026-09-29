@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>오픈소스 기여 노트</title>
+<meta name="description" content="2026년 9월에 올린 오픈소스 PR 두 건(Arize Phoenix #16549, kgateway #14769)을 쉽게 풀어쓴 문서">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="index.html">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="7" r="2"/><path d="M6 7v10"/><path d="M18 9c0 5-6 4-11 8.5"/></svg>
+      <span class="brand-text">기여 노트</span>
+    </a>
+    <nav class="nav" aria-label="문서">
+      <a href="index.html" aria-current="page">개요</a>
+      <a href="phoenix-16549.html">Phoenix #16549</a>
+      <a href="kgateway-14769.html">kgateway #14769</a>
+    </nav>
+  </div>
+</header>
+
+<div class="page">
+  <div class="hero">
+    <div class="eyebrow">OPEN SOURCE CONTRIBUTION NOTES · 2026.09</div>
+    <h1>오픈소스 기여 노트</h1>
+    <p class="lead">2026년 9월에 올린 PR 두 건을 풀어쓴 문서입니다. 무엇이 문제였는지, 왜 그렇게 고쳤는지, 메인테이너는 어떻게 받아들였는지를 처음 보는 사람도 따라올 수 있게 정리했습니다.</p>
+  </div>
+
+  <main class="content wide">
+
+    <section id="overview">
+      <h2><span class="num">01</span>한눈에 보기</h2>
+      <div class="cards">
+        <a class="card" href="phoenix-16549.html">
+          <span class="badge ok"><span class="dot"></span>머지 · 0.17.2 배포</span>
+          <h3>Arize Phoenix #16549</h3>
+          <p>OpenTelemetry Python 1.45가 나온 뒤, <code>register()</code> 한 줄에서 앱이 죽던 버그를 고쳤습니다.</p>
+          <dl class="kv">
+            <dt>프로젝트</dt><dd>LLM 관측성 도구 · ★11k · Python</dd>
+            <dt>걸린 시간</dt><dd>PR 제출부터 머지까지 약 10시간 40분</dd>
+            <dt>결과</dt><dd>arize-phoenix-otel 0.17.2로 당일 PyPI 배포</dd>
+          </dl>
+          <span class="go">자세히 보기 →</span>
+        </a>
+        <a class="card" href="kgateway-14769.html">
+          <span class="badge warn"><span class="dot"></span>리뷰 대기</span>
+          <h3>kgateway #14769</h3>
+          <p>로그인 공급자(OIDC) 연결이 실패하면, <strong>어느 URL이 실패했는지</strong> 상태 메시지에 보여주도록 고쳤습니다.</p>
+          <dl class="kv">
+            <dt>프로젝트</dt><dd>Envoy 기반 API·AI 게이트웨이 · CNCF 샌드박스 · Go</dd>
+            <dt>필수 검사</dt><dd>DCO, labeler 통과</dd>
+            <dt>현재</dt><dd>메인테이너의 CI 실행 승인과 리뷰 대기</dd>
+          </dl>
+          <span class="go">자세히 보기 →</span>
+        </a>
+      </div>
+    </section>
+
+    <section id="all">
+      <h2><span class="num">02</span>전체 기여 현황</h2>
+      <p>2026년 9월 29일 기준입니다. 이 문서는 위 두 건을 자세히 다룹니다. OpenLLMetry와 Logfire 건은 otel-canary를 준비하며 SDK를 조사하다 찾은 것으로, <a href="https://github.com/RosieOh/otel-canary/wiki" target="_blank" rel="noopener">otel-canary 위키</a>에 정리했습니다. LiteLLM과 valkey-helm은 직접 운영하던 프로젝트(RoundHouse)에서 발견한 문제입니다.</p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>프로젝트</th><th>번호</th><th>내용</th><th>상태</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Arize Phoenix</td>
+              <td><a href="https://github.com/Arize-ai/phoenix/pull/16549" target="_blank" rel="noopener">PR #16549</a></td>
+              <td>OTel Python 1.45에서 HTTP 전송을 쓰면 <code>register()</code>가 죽던 문제 수정</td>
+              <td><span class="badge ok"><span class="dot"></span>머지</span></td>
+            </tr>
+            <tr>
+              <td>kgateway</td>
+              <td><a href="https://github.com/kgateway-dev/kgateway/pull/14769" target="_blank" rel="noopener">PR #14769</a></td>
+              <td>OIDC discovery 실패 메시지에 URL 표시, 비밀번호는 가림</td>
+              <td><span class="badge warn"><span class="dot"></span>리뷰 대기</span></td>
+            </tr>
+            <tr>
+              <td>OpenLLMetry</td>
+              <td><a href="https://github.com/traceloop/openllmetry/issues/4526" target="_blank" rel="noopener">이슈 #4526</a> · <a href="https://github.com/traceloop/openllmetry/pull/4527" target="_blank" rel="noopener">PR #4527</a></td>
+              <td>traceloop-sdk가 <code>requests</code>·<code>httpx</code>를 선언하지 않아 깨끗한 환경에서 import가 실패하던 문제 보고와 수정</td>
+              <td><span class="badge warn"><span class="dot"></span>리뷰 대기</span></td>
+            </tr>
+            <tr>
+              <td>Pydantic Logfire</td>
+              <td><a href="https://github.com/pydantic/logfire/issues/2497" target="_blank" rel="noopener">이슈 #2497</a></td>
+              <td>OTel 1.45의 전송 계층이 Logfire의 재시도·디스크 재시도를 우회하는 문제 보고 (장애 주입 실험)</td>
+              <td><span class="badge warn"><span class="dot"></span>분류 대기</span></td>
+            </tr>
+            <tr>
+              <td>LiteLLM</td>
+              <td><a href="https://github.com/BerriAI/litellm/pull/42450" target="_blank" rel="noopener">PR #42450</a></td>
+              <td>fallback으로 넘어갈 수 있으면 재시도 대기(backoff)를 건너뛰도록 수정</td>
+              <td><span class="badge warn"><span class="dot"></span>리뷰 대기</span></td>
+            </tr>
+            <tr>
+              <td>LiteLLM</td>
+              <td><a href="https://github.com/BerriAI/litellm/pull/42667" target="_blank" rel="noopener">PR #42667</a></td>
+              <td>기동 시 Redis 확인이 한 번 실패해도 조정용 Redis를 계속 찾도록 수정</td>
+              <td><span class="badge warn"><span class="dot"></span>리뷰 대기</span></td>
+            </tr>
+            <tr>
+              <td>valkey-helm</td>
+              <td><a href="https://github.com/valkey-io/valkey-helm/pull/250" target="_blank" rel="noopener">PR #250</a></td>
+              <td>메트릭 exporter 컨테이너의 기본 보안 설정 강화</td>
+              <td><span class="badge warn"><span class="dot"></span>리뷰 대기</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="how-picked">
+      <h2><span class="num">03</span>이슈를 고른 방법</h2>
+      <p>유명한 프로젝트라고 외부 PR이 잘 머지되는 건 아닙니다. 요즘은 AI로 만든 PR이 쏟아져서, 큰 저장소일수록 외부 PR 대부분이 닫히거나 방치됩니다. 그래서 세 단계를 거쳐 기여할 곳을 골랐습니다.</p>
+      <ol class="steps">
+        <li>
+          <h3>외부 PR이 실제로 머지되는 곳 찾기</h3>
+          <p>저장소 61곳에서 6/30~8/28에 fork로 올라온 외부인 PR을 9/27까지 추적했습니다. 메인테이너와 봇, PR을 많이 낸 사람은 뺐습니다.</p>
+        </li>
+        <li>
+          <h3>기여 규칙 확인하기</h3>
+          <p>이슈에 할당되지 않은 PR을 봇이 자동으로 닫는 곳, CLA·DCO 서명이 필요한 곳, AI로 쓴 코멘트를 금지하는 곳을 걸러냈습니다.</p>
+        </li>
+        <li>
+          <h3>막 올라온, 아무도 가져가지 않은 이슈</h3>
+          <p>좋은 이슈는 몇 시간 안에 누군가 가져갑니다. 담당자도, 연결된 PR도, 본문이나 코멘트의 "제가 할게요" 표현도 없는 이슈만 남겼습니다.</p>
+        </li>
+      </ol>
+
+      <h3>측정해 보니</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>저장소</th><th class="num">14일 안에 머지</th><th class="num">머지까지 중앙값</th><th>메모</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>goreleaser</td><td class="num">65%</td><td class="num">1.1일</td><td>가장 빠르지만 열린 이슈가 거의 없음</td></tr>
+            <tr><td>Arize Phoenix</td><td class="num">36%</td><td class="num">2.1일</td><td>CLA 필요</td></tr>
+            <tr><td>kgateway</td><td class="num">26%</td><td class="num">2.4일</td><td>DCO 필요</td></tr>
+            <tr><td>LiteLLM</td><td class="num">4%</td><td class="num">8.0일</td><td>최종 머지 8%, 57%는 계속 열려 있음</td></tr>
+            <tr><td>LangGraph</td><td class="num">1%</td><td class="num">—</td><td>할당되지 않은 외부 PR은 봇이 자동 종료 (99% 닫힘)</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="callout note">
+        <div class="callout-title">자주 보인 규칙 (2026년 9월 말 기준)</div>
+        <ul>
+          <li><strong>이슈 할당 먼저</strong>: LangChain, LangGraph, MCP Python·TS SDK는 할당받지 않은 PR을 자동으로 닫습니다. MLflow는 이슈에 <code>ready</code> 라벨이 없으면 닫습니다.</li>
+          <li><strong>협업자만 PR 가능</strong>: openai-agents-python은 9/23부터 외부 PR을 받지 않습니다.</li>
+          <li><strong>AI로 쓴 대화 금지</strong>: Ruff, uv, Biome은 AI가 쓴 PR 설명과 코멘트를 봇이 닫습니다.</li>
+          <li><strong>서명</strong>: Phoenix·LiteLLM·Zed는 CLA, kgateway·Prometheus·MLflow는 DCO(<code>git commit -s</code>)가 필요합니다.</li>
+          <li><strong>예약된 이슈</strong>: Phoenix의 <code>good student issue</code>는 스탠퍼드 CS146S 수강생용입니다.</li>
+        </ul>
+      </div>
+      <p>이렇게 해서 고른 두 이슈는 성격이 달랐습니다. Phoenix #16547은 <strong>올라온 지 하루 된 버그 신고</strong>였고, kgateway #14750은 <strong>메인테이너가 고칠 방법까지 적어 둔 이슈</strong>였습니다.</p>
+    </section>
+
+    <section id="flow">
+      <h2><span class="num">04</span>기여는 이런 순서로 진행됐다</h2>
+      <p>두 PR 모두 같은 순서를 따랐습니다. 순서가 중요한 건 2번과 6번입니다. 먼저 직접 재현해서 원인을 확인한 뒤에, 이슈에 "제가 하겠다"고 알렸습니다.</p>
+      <ol class="flow">
+        <li>이슈 읽기</li>
+        <li>격리된 환경에서 재현</li>
+        <li>원인 찾기</li>
+        <li>코드 수정</li>
+        <li>테스트·린트</li>
+        <li>이슈에 코멘트</li>
+        <li>fork·브랜치 push</li>
+        <li>템플릿에 맞춘 PR</li>
+        <li>CLA 또는 DCO</li>
+        <li>메인테이너 리뷰</li>
+        <li>머지·릴리스</li>
+      </ol>
+      <div class="callout warn">
+        <div class="callout-title">첫 기여자가 겪는 대기 시간</div>
+        <p>첫 PR은 테스트 CI가 바로 돌지 않습니다. GitHub가 처음 기여하는 사람의 fork PR에는 메인테이너 승인(<code>action_required</code>)을 요구하기 때문입니다. 그래서 로컬에서 CI와 같은 검사를 미리 돌려 두는 것이 중요합니다.</p>
+      </div>
+    </section>
+
+    <section id="read">
+      <h2><span class="num">05</span>이 문서를 읽는 법</h2>
+      <p>각 PR 페이지는 같은 순서로 되어 있습니다.</p>
+      <ol>
+        <li><strong>한 줄 요약</strong>: 문제, 원인, 해결을 세 줄로</li>
+        <li><strong>먼저 알아둘 개념</strong>: 처음 보는 용어를 쉬운 말로</li>
+        <li><strong>무슨 문제였나 → 원인 → 해결</strong>: 실제 코드와 그림으로</li>
+        <li><strong>검증과 결과</strong>: 무엇을 확인했고 어떻게 머지됐는지</li>
+        <li><strong>스스로 설명해보기</strong>: 면접에서 나올 만한 질문과 답</li>
+      </ol>
+      <p>마지막 질문들은 답을 펼치기 전에 먼저 소리 내어 설명해 보세요. 막히는 부분이 다시 읽어야 할 부분입니다.</p>
+      <div class="pager">
+        <a href="phoenix-16549.html">Phoenix #16549 읽기 →</a>
+        <a href="kgateway-14769.html">kgateway #14769 읽기 →</a>
+      </div>
+    </section>
+
+    <div class="footer">
+      기준: 2026년 9월 29일 (한국 시간). 코드와 링크는 당시 GitHub 원문을 기준으로 합니다.
+    </div>
+  </main>
+</div>
+
+</body>
+</html>

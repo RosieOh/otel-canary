@@ -6,7 +6,9 @@ LLM 관측성 SDK가 OpenTelemetry Python의 **새 버전과 main 브랜치**에
 
 - **상태**: M3 완료 — OTel main(미릴리스)과 force 모드까지 매일 확인 (2026-09-29)
 - **대시보드**: https://rosieoh.github.io/otel-canary/
+- **위키**: https://github.com/RosieOh/otel-canary/wiki (동작 방식, 설계 결정, 기여 노트)
 - **설계**: [docs/DESIGN.md](docs/DESIGN.md)
+- **기여 노트**: [docs/oss-contribution-notes/](docs/oss-contribution-notes/) (HTML, 배포본은 https://rosieoh.github.io/otel-canary/notes/)
 - **스파이크**: [spike/](spike/) (검증용 코드, 버려도 됨)
 
 ## 사용법

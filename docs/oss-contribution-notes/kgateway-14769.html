@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>kgateway #14769 · 기여 노트</title>
+<meta name="description" content="OIDC discovery 실패 메시지에 URL을 표시하고 비밀번호를 가리도록 고친 kgateway PR #14769 해설">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="index.html">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="7" r="2"/><path d="M6 7v10"/><path d="M18 9c0 5-6 4-11 8.5"/></svg>
+      <span class="brand-text">기여 노트</span>
+    </a>
+    <nav class="nav" aria-label="문서">
+      <a href="index.html">개요</a>
+      <a href="phoenix-16549.html">Phoenix #16549</a>
+      <a href="kgateway-14769.html" aria-current="page">kgateway #14769</a>
+    </nav>
+  </div>
+</header>
+
+<div class="page">
+  <div class="hero">
+    <div class="eyebrow">KGATEWAY · PULL REQUEST #14769</div>
+    <h1>OIDC 연결 실패 메시지에 "어느 URL인지" 알려주기</h1>
+    <p class="lead">오류 메시지 한 줄을 고친 작은 변경이지만, 운영자가 장애 원인을 찾는 시간과 비밀 정보 노출을 함께 다룬 사례입니다.</p>
+    <div class="badges">
+      <span class="badge warn"><span class="dot"></span>리뷰 대기</span>
+      <span class="badge">Go</span>
+      <span class="badge">DCO</span>
+      <span class="badge">kind/fix</span>
+    </div>
+    <div class="links">
+      <a href="https://github.com/kgateway-dev/kgateway/issues/14750" target="_blank" rel="noopener">이슈 #14750</a>
+      <a href="https://github.com/kgateway-dev/kgateway/pull/14769" target="_blank" rel="noopener">PR #14769</a>
+      <a href="https://github.com/kgateway-dev/kgateway/issues/14750#issuecomment-5882110580" target="_blank" rel="noopener">선점 코멘트</a>
+    </div>
+  </div>
+
+  <div class="layout">
+    <aside class="toc" aria-label="목차">
+      <div class="toc-title">CONTENTS</div>
+      <ol>
+        <li><a href="#tldr">한 줄 요약</a></li>
+        <li><a href="#concepts">먼저 알아둘 개념</a></li>
+        <li><a href="#problem">무슨 문제였나</a></li>
+        <li><a href="#asked">이슈가 요구한 것</a></li>
+        <li><a href="#fix">해결</a></li>
+        <li><a href="#tests">테스트</a></li>
+        <li><a href="#verify">검증</a></li>
+        <li><a href="#process">PR을 올리기까지</a></li>
+        <li><a href="#open">남은 이야기</a></li>
+        <li><a href="#lessons">배운 점</a></li>
+        <li><a href="#qa">스스로 설명해보기</a></li>
+      </ol>
+    </aside>
+
+    <main class="content">
+
+      <section id="tldr">
+        <h2><span class="num">01</span>한 줄 요약</h2>
+        <ul class="tldr">
+          <li><b>문제</b><span>로그인 공급자(IdP)의 설정을 가져오지 못하면 TrafficPolicy 상태에 <code>unexpected status code 503</code>만 떠서, 공급자가 여러 개일 때 <strong>어느 쪽이 죽었는지</strong> 알 수 없었습니다.</span></li>
+          <li><b>해결</b><span>오류 메시지에 discovery URL을 넣되, URL 안의 비밀번호는 <code>url.Redacted()</code>로 가렸습니다. 기존 로그의 <code>issuer_uri</code> 필드에도 같은 마스킹을 적용했습니다.</span></li>
+          <li><b>상태</b><span>DCO와 labeler 필수 검사는 통과했습니다. 메인테이너의 CI 실행 승인과 리뷰를 기다리고 있습니다(2026-09-29 기준).</span></li>
+        </ul>
+      </section>
+
+      <section id="concepts">
+        <h2><span class="num">02</span>먼저 알아둘 개념</h2>
+        <dl class="concepts">
+          <div><dt>kgateway</dt><dd>Kubernetes용 API·AI 게이트웨이입니다. 사용자가 YAML로 정책을 쓰면 kgateway가 이를 Envoy 프록시 설정으로 번역합니다. 2018년 Solo.io의 Gloo로 시작한 CNCF 샌드박스 프로젝트이고, 스타는 5.7천 개입니다.</dd></div>
+          <div><dt>OIDC (OpenID Connect)</dt><dd>"구글로 로그인" 같은 로그인 표준입니다. 로그인을 대신 처리해 주는 곳을 <strong>IdP</strong>(Identity Provider)라고 부릅니다. Keycloak, Okta, Azure AD가 대표적입니다.</dd></div>
+          <div><dt>Issuer와 discovery</dt><dd>IdP 주소(issuer) 뒤에 <code>/.well-known/openid-configuration</code>을 붙여 요청하면, 토큰 발급 주소·로그인 주소·공개키 주소가 담긴 JSON을 받을 수 있습니다. 이 과정을 <strong>discovery</strong>라고 합니다. kgateway는 이 JSON으로 Envoy의 로그인 설정을 만듭니다.</dd></div>
+          <div><dt>GatewayExtension과 TrafficPolicy</dt><dd>GatewayExtension에 IdP 정보(<code>issuerURI</code> 등)를 적고, TrafficPolicy가 이를 참조해 특정 경로에 로그인을 붙입니다. GatewayExtension 하나를 여러 TrafficPolicy가 함께 참조할 수 있습니다.</dd></div>
+          <div><dt>Status condition</dt><dd>쿠버네티스 리소스의 <code>status</code>에 "적용됨/거절됨, 그 이유"를 적는 칸입니다. 문제가 생기면 운영자가 <code>kubectl describe</code>로 가장 먼저 보는 곳입니다.</dd></div>
+          <div><dt>캐시와 재시도</dt><dd>kgateway는 discovery 결과를 성공이든 실패든 캐시하고, 백그라운드에서 다시 시도합니다. 실패하면 30초부터 간격을 두 배씩 늘려 최대 5분까지 재시도합니다. 한 번 성공한 설정은 이후에 실패해도 계속 씁니다.</dd></div>
+        </dl>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 800 244" role="img" aria-label="TrafficPolicy가 GatewayExtension을 참조하고, kgateway 컨트롤러가 IdP에서 discovery 문서를 가져오는 흐름">
+            <defs>
+              <marker id="kg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M0,1 L9,5 L0,9" fill="none" stroke="#111" stroke-width="1.4"/>
+              </marker>
+              <marker id="kg-arrow-bad" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M0,1 L9,5 L0,9" fill="none" stroke="#b91c1c" stroke-width="1.4"/>
+              </marker>
+            </defs>
+
+            <rect class="box" x="10" y="40" width="150" height="48" rx="8"/>
+            <text x="85" y="60" text-anchor="middle" class="mono">TrafficPolicy A</text>
+            <text x="85" y="78" text-anchor="middle" class="muted">로그인이 필요한 경로</text>
+            <rect class="box" x="10" y="110" width="150" height="48" rx="8"/>
+            <text x="85" y="130" text-anchor="middle" class="mono">TrafficPolicy B</text>
+            <text x="85" y="148" text-anchor="middle" class="muted">로그인이 필요한 경로</text>
+
+            <path class="wire" d="M160 64 C184 64 184 92 206 92" marker-end="url(#kg-arrow)"/>
+            <path class="wire" d="M160 134 C184 134 184 108 206 108" marker-end="url(#kg-arrow)"/>
+            <text x="183" y="36" text-anchor="middle" class="muted">참조</text>
+
+            <rect class="box" x="210" y="70" width="170" height="60" rx="8"/>
+            <text x="295" y="95" text-anchor="middle" class="mono">GatewayExtension</text>
+            <text x="295" y="115" text-anchor="middle" class="mono muted">issuerURI</text>
+
+            <path class="wire" d="M380 100 H426" marker-end="url(#kg-arrow)"/>
+
+            <rect class="box" x="430" y="70" width="150" height="60" rx="8"/>
+            <text x="505" y="95" text-anchor="middle">kgateway</text>
+            <text x="505" y="115" text-anchor="middle" class="muted">discovery · 캐시</text>
+
+            <text x="610" y="56" text-anchor="middle" class="mono muted">GET …/.well-known/openid-configuration</text>
+            <path class="wire" d="M580 100 H636" marker-end="url(#kg-arrow)"/>
+
+            <rect class="box" x="640" y="70" width="150" height="60" rx="8"/>
+            <text x="715" y="95" text-anchor="middle">IdP</text>
+            <text x="715" y="115" text-anchor="middle" class="muted">Keycloak · Okta …</text>
+
+            <path class="wire-bad" d="M505 130 V196 H85 V162" marker-end="url(#kg-arrow-bad)"/>
+            <text x="295" y="222" text-anchor="middle" class="bad">실패하면 오류를 캐시하고, TrafficPolicy 상태에 표시</text>
+          </svg>
+          <figcaption>discovery가 실패하면 오류가 GatewayExtension에 캐시되고, 이를 참조하는 모든 TrafficPolicy가 "거절됨" 상태가 되면서 그 오류 메시지가 status에 찍힙니다.</figcaption>
+        </figure>
+      </section>
+
+      <section id="problem">
+        <h2><span class="num">03</span>무슨 문제였나</h2>
+        <p>discovery가 실패하면 TrafficPolicy의 status에는 이런 메시지만 남았습니다.</p>
+<pre><code>error discovering OpenID provider config; unexpected status code 503</code></pre>
+        <p>GatewayExtension이 하나뿐이면 괜찮습니다. 하지만 사내 Keycloak, Azure AD B2C, Okta처럼 IdP가 여러 개인 클러스터에서 하나가 503을 내면, status만 봐서는 <strong>어느 IdP가 죽었는지</strong> 알 수 없습니다. 결국 컨트롤러 로그를 뒤져 <code>issuer_uri</code> 필드를 찾아야 했습니다.</p>
+        <div class="callout warn">
+          <div class="callout-title">숨어 있던 두 번째 문제</div>
+          <p>그 로그의 <code>issuer_uri</code>는 사용자가 쓴 주소를 그대로 찍고 있었습니다. 주소에 <code>https://client:secret@idp.example.com</code>처럼 비밀번호가 들어 있으면, 그 비밀번호가 로그 수집 시스템까지 그대로 퍼집니다.</p>
+        </div>
+      </section>
+
+      <section id="asked">
+        <h2><span class="num">04</span>이슈가 요구한 것</h2>
+        <p>이슈 #14750은 쓰기 권한이 있는 COLLABORATOR(DuncanDoyle)가 올렸습니다. 고칠 위치를 줄 번호까지 짚고, 수정 방법과 완료 기준을 적어 둔 좋은 이슈였습니다.</p>
+        <ol class="steps">
+          <li><h3>상태에 URL 표시</h3><p>200이 아닌 응답과 해석할 수 없는 응답 본문, 두 가지 실패 모두 TrafficPolicy 상태에 discovery URL이 나와야 합니다.</p></li>
+          <li><h3>비밀번호는 모든 곳에서 가림</h3><p>issuer URI 속 비밀번호는 로그와 상태 어디에서도 드러나면 안 됩니다. 기존 <code>issuer_uri</code> 로그 필드도 포함입니다.</p></li>
+          <li><h3>통신 오류엔 URL 한 번만</h3><p>통신 자체가 실패한 오류에는 Go가 이미 URL을 넣어 주니, 거기에 또 덧붙이지 말아야 합니다.</p></li>
+        </ol>
+        <p>이슈에는 열린 질문이 하나 있었습니다. <strong>쿼리 문자열도 지울 것인가.</strong> 쿼리에는 진단에 쓸모 있는 정보가 들어 있을 수 있어서, 명시적으로 정하자고 했습니다.</p>
+      </section>
+
+      <section id="fix">
+        <h2><span class="num">05</span>해결: 바꾼 코드</h2>
+        <h3>① URL을 가리는 헬퍼</h3>
+        <p class="code-label">pkg/kgateway/extensions2/plugins/trafficpolicy/oidc.go</p>
+<pre><code><span class="cm">// redactURL masks the password in rawURL's userinfo so the URL can be logged and surfaced in
+// status. The query string is kept, since parameters such as Azure AD B2C's ?p=&lt;policy&gt; help
+// tell which provider configuration failed.</span>
+func redactURL(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return "&lt;invalid URL&gt;"
+	}
+	return u.Redacted()
+}</code></pre>
+        <p>Go 표준 라이브러리의 <code>url.URL.Redacted()</code>는 비밀번호만 <code>xxxxx</code>로 바꾸고, 사용자 이름과 쿼리는 그대로 둡니다. 주소를 해석할 수 없을 때는 원문을 찍지 않고 <code>&lt;invalid URL&gt;</code>을 돌려줍니다.</p>
+
+        <h3>② 오류 세 곳에 URL 넣기</h3>
+        <p>URL 마스킹은 요청마다 할 필요가 없어서, 함수 시작에서 한 번만 계산합니다.</p>
+<pre><code>func (o *oidcProviderConfigDiscoverer) discover(ctx context.Context, discoveryURL string) (*oidcProviderConfig, error) {
+<span class="add">+	redactedURL := redactURL(discoveryURL)</span>
+	...
+	<span class="cm">// 500·502·503·504: 재시도하는 실패</span>
+<span class="del">-	return fmt.Errorf("error discovering OpenID provider config; unexpected status code %d", resp.StatusCode)</span>
+<span class="add">+	return fmt.Errorf("error discovering OpenID provider config at %s; unexpected status code %d", redactedURL, resp.StatusCode)</span>
+
+	<span class="cm">// 200인데 JSON을 해석하지 못함</span>
+<span class="del">-	return retry.Unrecoverable(fmt.Errorf("error decoding OpenID provider config: %w", err))</span>
+<span class="add">+	return retry.Unrecoverable(fmt.Errorf("error decoding OpenID provider config at %s: %w", redactedURL, err))</span>
+
+	<span class="cm">// 그 밖의 상태 코드: 재시도하지 않는 실패</span>
+<span class="del">-	return retry.Unrecoverable(fmt.Errorf("error discovering OpenID provider config; unexpected status code %d", resp.StatusCode))</span>
+<span class="add">+	return retry.Unrecoverable(fmt.Errorf("error discovering OpenID provider config at %s; unexpected status code %d", redactedURL, resp.StatusCode))</span></code></pre>
+
+        <h3>③ 로그 두 곳 마스킹</h3>
+<pre><code><span class="del">-	logger.Warn("error refreshing OpenID provider config", "issuer_uri", issuerURI, ...)</span>
+<span class="add">+	logger.Warn("error refreshing OpenID provider config", "issuer_uri", redactURL(issuerURI), ...)</span></code></pre>
+
+        <h3>④ 일부러 건드리지 않은 곳</h3>
+        <p>통신 자체가 실패할 때(<code>client.Do</code> 오류)는 Go의 HTTP 클라이언트가 이미 URL을 넣고 비밀번호도 <code>***</code>로 가려줍니다. 여기에 URL을 또 붙이면 한 메시지에 URL이 두 번 나와서, 이슈의 세 번째 기준에 어긋납니다.</p>
+
+        <h3>결과 비교</h3>
+        <div class="compare">
+          <div><span class="tag">BEFORE</span><h3>어느 IdP인지 모름</h3><p><code>error discovering OpenID provider config; unexpected status code 503</code></p></div>
+          <div><span class="tag">AFTER</span><h3>URL로 바로 식별</h3><p><code>error discovering OpenID provider config at https://idp.example.com/.well-known/openid-configuration; unexpected status code 503</code></p></div>
+        </div>
+
+        <h3>비밀번호가 가려지는 방식</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>어디서</th><th>누가 가리나</th><th>결과 예시</th></tr></thead>
+            <tbody>
+              <tr><td>상태 코드·디코딩 오류 (이번 수정)</td><td><code>url.URL.Redacted()</code></td><td><code>http://client:xxxxx@idp.example.com/.well-known/openid-configuration</code></td></tr>
+              <tr><td>통신 실패 오류 (원래 동작)</td><td>Go net/http 클라이언트</td><td><code>http://client:***@idp.example.com/.well-known/openid-configuration</code></td></tr>
+              <tr><td><code>issuer_uri</code> 로그 (이번 수정)</td><td><code>redactURL</code></td><td><code>http://client:xxxxx@idp.example.com</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="callout note">
+          <div class="callout-title">쿼리 문자열은 남겼다</div>
+          <p>Azure AD B2C는 <code>?p=&lt;policy&gt;</code>처럼 쿼리로 어떤 로그인 정책인지 구분합니다. 쿼리를 지우면 같은 IdP 안에서 어느 정책이 실패했는지 알 수 없습니다. 그래서 비밀번호만 가리고 쿼리는 남기자고 선점 코멘트에서 먼저 제안했습니다. 메인테이너가 지우자고 하면 <code>u.RawQuery = ""</code> 한 줄만 추가하면 됩니다.</p>
+        </div>
+
+        <div class="callout">
+          <div class="callout-title">오류 메시지를 바꿔도 부작용이 없는 이유</div>
+          <p>kgateway는 이전 결과와 새 결과의 <strong>오류 문자열이 같은지</strong> 비교해서(<code>sameOutcome</code>), 다를 때만 설정을 다시 계산합니다. URL은 issuer마다 고정이라, 같은 실패가 반복되면 문자열도 똑같습니다. 그래서 불필요한 재계산이 생기지 않습니다.</p>
+        </div>
+      </section>
+
+      <section id="tests">
+        <h2><span class="num">06</span>테스트</h2>
+        <p>이 파일의 기존 테스트는 testify의 <code>require</code>를 쓰고 있어서 같은 스타일을 따랐습니다. 테스트 서버는 Go의 <code>httptest</code>로 띄웁니다.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>테스트</th><th>확인하는 것</th></tr></thead>
+            <tbody>
+              <tr><td><code>TestOIDCConfigDiscovery</code> (기존 표에 한 줄 추가)</td><td>404, 500, 잘못된 JSON 등 모든 오류 케이스가 discovery URL을 포함하는지</td></tr>
+              <tr><td><code>TestOIDCConfigDiscoveryErrorMasksCredentials</code> (새로 추가)</td><td>issuer에 <code>client:s3cret@</code>을 넣었을 때, 404 응답과 통신 실패 모두 URL은 보이고 <code>s3cret</code>은 안 보이는지</td></tr>
+              <tr><td><code>TestRedactURL</code> (새로 추가)</td><td>비밀번호 없음, 비밀번호 가림, 쿼리 유지, 해석할 수 없는 URL의 네 가지 경우</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="code-label">TestOIDCConfigDiscoveryErrorMasksCredentials (요약, 한글 주석은 설명용)</p>
+<pre><code>tests := []struct {
+	name          string
+	closeServer   bool   <span class="cm">// true면 서버를 닫아 통신 실패를 만든다</span>
+	errorContains string
+}{
+	{name: "unexpected status code", errorContains: "client:xxxxx@"},  <span class="cm">// url.Redacted()</span>
+	{name: "transport failure", closeServer: true, errorContains: "client:***@"},  <span class="cm">// net/http</span>
+}
+...
+issuerURL.User = url.UserPassword("client", "s3cret")
+_, err = o.get(context.Background(), issuer)
+
+r.Contains(err.Error(), tt.errorContains+issuerURL.Host+wellKnownOpenIDConfPath)
+r.NotContains(err.Error(), "s3cret", "the password should be masked")</code></pre>
+        <p>통신 실패는 테스트 서버를 띄웠다가 곧바로 닫아서 만듭니다. 연결이 거부되면 재시도가 5번 일어나기 때문에 이 케이스는 1.5초쯤 걸립니다.</p>
+      </section>
+
+      <section id="verify">
+        <h2><span class="num">07</span>검증</h2>
+        <p>kgateway의 PR 전 체크리스트(<code>CLAUDE.md</code>, <code>AGENTS.md</code>)에 적힌 검사를 로컬에서 모두 돌렸습니다.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>확인 항목</th><th>결과</th></tr></thead>
+            <tbody>
+              <tr><td>패키지 전체 테스트 · Go 1.26.8 (CI와 같은 버전)</td><td class="add">통과</td></tr>
+              <tr><td>패키지 전체 테스트 · Go 1.27.1 (로컬)</td><td class="add">통과</td></tr>
+              <tr><td><code>go vet</code></td><td class="add">통과</td></tr>
+              <tr><td><code>make fmt-go-changed</code> (포맷터)</td><td class="add">바뀐 것 없음</td></tr>
+              <tr><td><code>make verify</code> (생성 코드를 다시 만들고 차이 확인)</td><td class="add">차이 없음</td></tr>
+              <tr><td>저장소 전용 golangci-lint (<code>krtequals</code> 분석기 포함)</td><td class="add">이슈 0개</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="callout">
+          <div class="callout-title">검증하면서 알게 된 것</div>
+          <ul>
+            <li>로컬에 Go가 없어서 Homebrew로 1.27.1을 설치했습니다. 저장소는 1.26.8을 요구하는데, Go의 <code>GOTOOLCHAIN</code> 기능이 정확한 버전을 자동으로 받아 lint와 테스트에 썼습니다.</li>
+            <li><code>make analyze</code>는 저장소 전체를 검사하고 YAML 포맷팅까지 해서, 관련 없는 파일이 바뀔 수 있습니다. 그래서 커스텀 linter 바이너리만 빌드해 수정한 패키지에 같은 설정으로 돌렸습니다.</li>
+            <li><code>make verify</code>가 도는 동안에는 생성 파일을 지웠다가 다시 만들어서, <code>git diff</code>가 잠시 수천 줄 삭제로 보였습니다. 커밋끼리 비교해 실제 변경이 두 파일(+103/−5)뿐임을 확인했습니다.</li>
+          </ul>
+        </div>
+      </section>
+
+      <section id="process">
+        <h2><span class="num">08</span>PR을 올리기까지</h2>
+        <ol class="timeline">
+          <li><time>2026-09-24 20:36</time>이슈 #14750이 <code>kind/fix</code> 라벨로 올라옵니다.</li>
+          <li class="hl"><time>2026-09-29 10:50</time>이슈에 <strong>선점 코멘트</strong>를 남깁니다. 이슈가 제안한 방법을 따르겠다고 밝히고, 쿼리 문자열은 남기자는 의견을 붙였습니다.</li>
+          <li class="hl"><time>2026-09-29 11:07</time><strong>PR #14769를 제출</strong>합니다. DCO와 labeler 검사가 통과하고, <code>kind/fix</code>와 <code>release-note</code> 라벨이 자동으로 붙습니다.</li>
+          <li><time>지금</time>첫 기여자라 나머지 CI(단위 테스트, Lint, Verify 등)는 메인테이너 승인(<code>action_required</code>)을 기다리고 있습니다.</li>
+        </ol>
+
+        <h3>kgateway만의 규칙 세 가지</h3>
+        <ol>
+          <li><strong>DCO 서명</strong>: 모든 커밋에 <code>Signed-off-by</code> 줄이 필요합니다. <code>git commit -s</code>로 커밋하면 자동으로 붙습니다. CLA와 달리 따로 서명할 문서는 없습니다.</li>
+          <li><strong>PR 템플릿</strong>: 본문에 Description, Change Type(<code>/kind fix</code>), Changelog(<code>release-note</code> 코드 블록)가 있어야 합니다. labeler라는 필수 검사가 본문을 읽어 확인합니다.</li>
+          <li><strong>CLI의 함정</strong>: <code>gh pr create --body-file</code>로 올리면 GitHub가 템플릿을 채워주지 않습니다. 그래서 템플릿 구조를 본문에 직접 옮겨 적었습니다.</li>
+        </ol>
+        <p class="code-label">PR 본문의 필수 부분</p>
+<pre><code># Change Type
+
+/kind fix
+
+# Changelog
+
+```release-note
+fix: OpenID discovery failures now name the discovery URL, with any password masked,
+in the status of TrafficPolicies that reference the GatewayExtension
+```</code></pre>
+      </section>
+
+      <section id="open">
+        <h2><span class="num">09</span>남은 이야기</h2>
+        <h3>재시도하면 URL이 여러 번 나온다</h3>
+        <p>500·502·503·504는 최대 5번까지 재시도합니다. 재시도 라이브러리(retry-go)는 마지막 오류에 시도마다의 메시지를 모두 이어 붙이기 때문에, 5xx가 계속되면 status에 URL이 다섯 번 나옵니다. 실제 테스트 로그는 이랬습니다.</p>
+<pre><code>All attempts fail:
+#1: error discovering OpenID provider config at http://127.0.0.1:65233/.well-known/openid-configuration; unexpected status code 503
+#2: error discovering OpenID provider config at http://127.0.0.1:65233/.well-known/openid-configuration; unexpected status code 503
+...
+#5: error discovering OpenID provider config at http://127.0.0.1:65233/.well-known/openid-configuration; unexpected status code 503</code></pre>
+        <p><code>retry.LastErrorOnly(true)</code>를 쓰면 마지막 오류만 남길 수 있습니다. 하지만 캐시되는 오류 메시지 자체가 바뀌는 별도의 변경이라 이번 PR에서는 빼고, PR 설명의 Additional Notes에 적어 두었습니다.</p>
+        <h3>메인테이너의 답을 기다리는 것</h3>
+        <ul>
+          <li>쿼리 문자열을 남긴 결정에 대한 의견</li>
+          <li>CI 실행 승인과 코드 리뷰. 이 저장소의 외부 PR은 머지까지 중앙값 약 2.4일이 걸렸습니다.</li>
+        </ul>
+      </section>
+
+      <section id="lessons">
+        <h2><span class="num">10</span>배운 점</h2>
+        <ol>
+          <li><strong>좋은 이슈는 방법과 기준을 준다.</strong> 그대로 따르되, 열린 질문(쿼리)은 선점 코멘트에서 내 의견을 먼저 밝혔습니다.</li>
+          <li><strong>오류 메시지는 운영자의 첫 단서다.</strong> "무엇이 실패했는지"와 함께 "어디서"를 알려줘야 합니다. 단, 비밀 정보는 가립니다.</li>
+          <li><strong>메시지를 바꾸기 전에 그 문자열을 쓰는 곳을 찾는다.</strong> 이번에는 <code>sameOutcome</code>이 오류 문자열을 비교하고 있었습니다.</li>
+          <li><strong>저장소의 규칙은 필수 검사다.</strong> DCO, PR 템플릿, labeler를 지키지 않으면 코드와 상관없이 CI에서 떨어집니다.</li>
+          <li><strong>범위를 지킨다.</strong> 재시도 메시지 중복처럼 발견한 다른 문제는 고치지 않고 설명에 남겼습니다.</li>
+        </ol>
+      </section>
+
+      <section id="qa">
+        <h2><span class="num">11</span>스스로 설명해보기</h2>
+        <p>면접에서 이 PR에 대해 나올 만한 질문입니다. 답을 펼치기 전에 먼저 말로 설명해 보세요.</p>
+
+        <details class="qa">
+          <summary>왜 오류 메시지에 URL을 넣어야 했나요?</summary>
+          <div class="a"><p>discovery 오류는 GatewayExtension을 참조하는 모든 TrafficPolicy의 status에 찍힙니다. IdP가 여러 개인 클러스터에서는 status만 보고 어느 IdP가 실패했는지 알 수 있어야, 운영자가 로그를 뒤지지 않고 바로 원인을 찾습니다.</p></div>
+        </details>
+
+        <details class="qa">
+          <summary>비밀번호를 왜 가려야 하나요? 누가 이 메시지를 보나요?</summary>
+          <div class="a"><p>status는 그 리소스를 읽을 권한이 있는 사람이면 누구나 볼 수 있고, 로그는 로그 수집 시스템을 통해 더 넓게 퍼집니다. issuer URI에 비밀번호가 들어 있으면 그대로 노출되니, 표시하는 모든 곳에서 가려야 합니다.</p></div>
+        </details>
+
+        <details class="qa">
+          <summary><code>url.Redacted()</code>는 무엇을 가리고 무엇을 남기나요?</summary>
+          <div class="a"><p>비밀번호만 <code>xxxxx</code>로 바꾸고, 사용자 이름·호스트·경로·쿼리는 그대로 둡니다. 이슈에서 제안한 방식이 이 함수였고, 쿼리를 남기는 것도 의도한 동작입니다.</p></div>
+        </details>
+
+        <details class="qa">
+          <summary><code>client.Do</code>에서 나는 오류는 왜 그대로 뒀나요?</summary>
+          <div class="a"><p>Go의 HTTP 클라이언트가 이미 <code>*url.Error</code>로 URL을 넣고, 비밀번호도 <code>***</code>로 가려줍니다. 여기에 URL을 또 붙이면 한 메시지에 두 번 나옵니다. 이슈의 "통신 실패에는 URL을 정확히 한 번" 기준에 맞추려고 건드리지 않았고, 이 동작은 통신 실패 테스트로 직접 확인했습니다.</p></div>
+        </details>
+
+        <details class="qa">
+          <summary>오류 문자열을 바꾸면 KRT 재계산이 늘어나지 않나요?</summary>
+          <div class="a"><p>kgateway는 이전 결과와 새 결과의 오류 문자열이 같은지 비교해 다를 때만 다시 계산합니다(<code>sameOutcome</code>). URL은 issuer마다 고정이라 같은 실패가 반복되면 문자열도 같습니다. 그래서 재계산이 늘지 않습니다. 이슈 작성자도 같은 점을 짚었습니다.</p></div>
+        </details>
+
+        <details class="qa">
+          <summary>쿼리 문자열을 남긴 이유는요? 반대 의견은 없을까요?</summary>
+          <div class="a"><p>Azure AD B2C는 <code>?p=&lt;policy&gt;</code>로 로그인 정책을 구분해서, 쿼리가 있어야 어느 정책이 실패했는지 알 수 있습니다. 반대로 어떤 IdP는 쿼리에 민감한 값을 넣을 수도 있습니다. 그래서 혼자 정하지 않고 선점 코멘트로 먼저 의견을 물었고, 지우자는 답이 오면 한 줄로 바꿀 수 있게 해 두었습니다.</p></div>
+        </details>
+
+        <details class="qa">
+          <summary>통신 실패는 테스트에서 어떻게 만들었나요?</summary>
+          <div class="a"><p><code>httptest</code> 서버를 띄워 주소를 얻은 뒤 곧바로 닫았습니다. 그 주소로 요청하면 연결이 거부됩니다. 재시도가 5번 일어나서 이 케이스만 1.5초쯤 걸립니다.</p></div>
+        </details>
+
+        <details class="qa">
+          <summary>5xx 오류에서 URL이 여러 번 나오는 건 왜 고치지 않았나요?</summary>
+          <div class="a"><p>retry-go가 시도마다의 오류를 모두 이어 붙이기 때문입니다. <code>retry.LastErrorOnly(true)</code>로 줄일 수 있지만, 캐시되는 오류 메시지가 바뀌는 별도의 결정입니다. 이슈 범위를 넘어서서 PR 설명에 적어 메인테이너가 판단하게 했습니다.</p></div>
+        </details>
+      </section>
+
+      <div class="pager">
+        <a href="phoenix-16549.html">← Phoenix #16549</a>
+        <a href="index.html">개요 →</a>
+      </div>
+      <div class="footer">기준: 2026년 9월 29일 (한국 시간). PR은 리뷰 대기 중이라 이후 바뀔 수 있습니다.</div>
+    </main>
+  </div>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,430 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phoenix #16549 · 기여 노트</title>
+<meta name="description" content="OpenTelemetry Python 1.45에서 Arize Phoenix의 register()가 죽던 버그를 고친 PR #16549 해설">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="index.html">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="7" r="2"/><path d="M6 7v10"/><path d="M18 9c0 5-6 4-11 8.5"/></svg>
+      <span class="brand-text">기여 노트</span>
+    </a>
+    <nav class="nav" aria-label="문서">
+      <a href="index.html">개요</a>
+      <a href="phoenix-16549.html" aria-current="page">Phoenix #16549</a>
+      <a href="kgateway-14769.html">kgateway #14769</a>
+    </nav>
+  </div>
+</header>
+
+<div class="page">
+  <div class="hero">
+    <div class="eyebrow">ARIZE PHOENIX · PULL REQUEST #16549</div>
+    <h1>OpenTelemetry 1.45에서 <code>register()</code>가 죽던 버그 고치기</h1>
+    <p class="lead">의존하던 라이브러리가 내부 구조를 바꾸자, Phoenix의 설정 함수 한 줄이 앱 전체를 멈추게 만든 사례입니다.</p>
+    <div class="badges">
+      <span class="badge ok"><span class="dot"></span>머지됨</span>
+      <span class="badge">Python</span>
+      <span class="badge">arize-phoenix-otel 0.17.2</span>
+      <span class="badge">CLA</span>
+    </div>
+    <div class="links">
+      <a href="https://github.com/Arize-ai/phoenix/issues/16547" target="_blank" rel="noopener">이슈 #16547</a>
+      <a href="https://github.com/Arize-ai/phoenix/pull/16549" target="_blank" rel="noopener">PR #16549</a>
+      <a href="https://github.com/Arize-ai/phoenix/commit/70c5051460a199410145913fe2513799bfeb1eaa" target="_blank" rel="noopener">머지 커밋 70c5051</a>
+      <a href="https://pypi.org/project/arize-phoenix-otel/0.17.2/" target="_blank" rel="noopener">PyPI 0.17.2</a>
+      <a href="https://github.com/open-telemetry/opentelemetry-python/pull/5389" target="_blank" rel="noopener">원인이 된 OTel PR #5389</a>
+    </div>
+  </div>
+
+  <div class="layout">
+    <aside class="toc" aria-label="목차">
+      <div class="toc-title">CONTENTS</div>
+      <ol>
+        <li><a href="#tldr">한 줄 요약</a></li>
+        <li><a href="#concepts">먼저 알아둘 개념</a></li>
+        <li><a href="#timeline">타임라인</a></li>
+        <li><a href="#problem">무슨 문제였나</a></li>
+        <li><a href="#cause">원인</a></li>
+        <li><a href="#fix">해결</a></li>
+        <li><a href="#verify">검증</a></li>
+        <li><a href="#maintainer">메인테이너가 바꾼 부분</a></li>
+        <li><a href="#result">결과</a></li>
+        <li><a href="#lessons">배운 점</a></li>
+        <li><a href="#qa">스스로 설명해보기</a></li>
+      </ol>
+    </aside>
+
+    <main class="content">
+
+      <section id="tldr">
+        <h2><span class="num">01</span>한 줄 요약</h2>
+        <ul class="tldr">
+          <li><b>문제</b><span>OpenTelemetry Python 1.45가 나온 뒤, Phoenix로 트레이스를 <strong>HTTP로 보내도록</strong> 설정하면 <code>register()</code>를 부르는 순간 <code>AttributeError</code>로 앱이 죽었습니다.</span></li>
+          <li><b>원인</b><span>Phoenix가 exporter 객체의 내부 속성 <code>_headers</code>를 직접 읽고 있었는데, 1.45에서 이 값이 <code>exporter._client._headers</code>로 옮겨졌습니다.</span></li>
+          <li><b>해결</b><span>두 위치 모두에서 헤더를 읽는 헬퍼를 만들고, 1.45에서 새로 섞여 들어온 기본 헤더는 걸러 출력이 예전과 같게 했습니다. 메인테이너가 다듬어 머지했고, 같은 날 0.17.2로 배포됐습니다.</span></li>
+        </ul>
+      </section>
+
+      <section id="concepts">
+        <h2><span class="num">02</span>먼저 알아둘 개념</h2>
+        <dl class="concepts">
+          <div><dt>Arize Phoenix</dt><dd>LLM 앱을 들여다보는 오픈소스 관측성(Observability) 도구입니다. 어떤 프롬프트를 보냈고, 어떤 응답이 왔고, 시간이 얼마나 걸렸는지를 기록해서 화면에 보여줍니다. 스타는 1.1만 개입니다.</dd></div>
+          <div><dt>OpenTelemetry (OTel)</dt><dd>트레이스·메트릭·로그를 모으는 업계 표준입니다. 앱 안의 작업 하나하나를 <strong>span</strong>이라는 기록으로 남기고, 이를 수집 서버로 보냅니다. Phoenix도 이 표준으로 데이터를 받습니다.</dd></div>
+          <div><dt>Exporter</dt><dd>만들어진 span을 서버로 배달하는 부품입니다. 배달 방식에 따라 <strong>HTTP exporter</strong>(Phoenix는 6006 포트의 <code>/v1/traces</code>)와 <strong>gRPC exporter</strong>(4317 포트)가 있습니다.</dd></div>
+          <div><dt><code>register()</code></dt><dd><code>phoenix.otel.register()</code>는 Phoenix용 OTel 설정을 한 줄로 끝내주는 함수입니다. TracerProvider, SpanProcessor, exporter를 한 번에 조립하고, 설정 요약(주소, 전송 방식, 헤더)을 배너로 보여줍니다.</dd></div>
+          <div><dt>헤더 마스킹</dt><dd>exporter는 인증 토큰 같은 헤더를 붙여 보냅니다. 배너에 토큰이 찍히면 안 되니까, 값은 <code>****</code>로 가리고 헤더 이름만 보여줍니다.</dd></div>
+          <div><dt>밑줄(<code>_</code>)로 시작하는 속성</dt><dd>파이썬에서 "내부용이니 밖에서 쓰지 말라"는 약속입니다. 라이브러리는 이런 속성을 예고 없이 바꿔도 됩니다. 이번 버그가 바로 여기서 나왔습니다.</dd></div>
+        </dl>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 780 170" role="img" aria-label="LLM 앱에서 Phoenix 서버까지 트레이스가 전달되는 흐름">
+            <defs>
+              <marker id="ph-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M0,1 L9,5 L0,9" fill="none" stroke="#111" stroke-width="1.4"/>
+              </marker>
+            </defs>
+            <path class="wire-soft" d="M170 44 V34 H630 V44"/>
+            <text x="400" y="24" text-anchor="middle" class="muted">register()가 한 번에 조립하는 부분</text>
+
+            <rect class="box" x="10" y="60" width="120" height="60" rx="8"/>
+            <text x="70" y="86" text-anchor="middle">LLM 앱</text>
+            <text x="70" y="106" text-anchor="middle" class="muted">내 코드</text>
+
+            <rect class="box" x="170" y="60" width="130" height="60" rx="8"/>
+            <text x="235" y="86" text-anchor="middle" class="mono">TracerProvider</text>
+            <text x="235" y="106" text-anchor="middle" class="muted">span을 만든다</text>
+
+            <rect class="box" x="340" y="60" width="130" height="60" rx="8"/>
+            <text x="405" y="86" text-anchor="middle" class="mono">SpanProcessor</text>
+            <text x="405" y="106" text-anchor="middle" class="muted">모아서 넘긴다</text>
+
+            <rect class="box" x="510" y="60" width="120" height="60" rx="8"/>
+            <text x="570" y="86" text-anchor="middle" class="mono">Exporter</text>
+            <text x="570" y="106" text-anchor="middle" class="muted">HTTP · gRPC</text>
+
+            <rect class="box" x="670" y="60" width="100" height="60" rx="8"/>
+            <text x="720" y="86" text-anchor="middle">Phoenix</text>
+            <text x="720" y="106" text-anchor="middle" class="muted">:6006 · :4317</text>
+
+            <path class="wire" d="M130 90 H166" marker-end="url(#ph-arrow)"/>
+            <path class="wire" d="M300 90 H336" marker-end="url(#ph-arrow)"/>
+            <path class="wire" d="M470 90 H506" marker-end="url(#ph-arrow)"/>
+            <path class="wire" d="M630 90 H666" marker-end="url(#ph-arrow)"/>
+
+            <text x="570" y="150" text-anchor="middle" class="bad">이번 버그가 난 곳</text>
+            <path class="wire-bad" d="M570 136 V124"/>
+          </svg>
+          <figcaption>트레이스가 전달되는 길. <code>register()</code>는 가운데 세 부품을 조립하고, 이번 문제는 exporter 안에서 일어났습니다.</figcaption>
+        </figure>
+      </section>
+
+      <section id="timeline">
+        <h2><span class="num">03</span>타임라인</h2>
+        <p class="muted small">시간은 모두 한국 시간입니다.</p>
+        <ol class="timeline">
+          <li><time>2026-08-12</time>OpenTelemetry Python에 <a href="https://github.com/open-telemetry/opentelemetry-python/pull/5389" target="_blank" rel="noopener">PR #5389</a>가 머지됩니다. HTTP exporter가 새 공용 HTTP 클라이언트를 쓰도록 바뀐 리팩터링입니다.</li>
+          <li><time>2026-09-25 21:32</time>OpenTelemetry Python <strong>1.45.0</strong>이 릴리스되면서 이 변경이 사용자에게 배포됩니다.</li>
+          <li><time>2026-09-27 20:46</time>이슈 <a href="https://github.com/Arize-ai/phoenix/issues/16547" target="_blank" rel="noopener">#16547</a>이 올라옵니다. "arize-phoenix-otel 0.17.1이 opentelemetry-sdk 1.45 이상에서 동작하지 않는다"는 신고입니다.</li>
+          <li class="hl"><time>2026-09-28 19:10</time><strong>PR #16549를 제출</strong>하고, 이슈에 재현 결과와 원인을 코멘트로 남깁니다. 10분쯤 뒤 PR 코멘트로 CLA에 서명합니다.</li>
+          <li><time>2026-09-29 04:31</time>메인테이너 Alexander Song(axiomofjoy)이 승인합니다. 4분 뒤 직접 커밋을 더하고, 05:00에 다시 승인합니다.</li>
+          <li class="hl"><time>2026-09-29 05:48</time><strong>머지</strong>됩니다. PR을 낸 지 약 10시간 40분 만입니다.</li>
+          <li class="hl"><time>2026-09-29 06:00</time><strong>arize-phoenix-otel 0.17.2</strong>가 PyPI에 배포됩니다.</li>
+        </ol>
+      </section>
+
+      <section id="problem">
+        <h2><span class="num">04</span>무슨 문제였나</h2>
+        <p>신고자와 같은 조건을 격리된 가상환경에 만들었습니다. arize-phoenix-otel 0.17.1과 OpenTelemetry 1.45.0을 설치하고, Phoenix 서버 주소(HTTP)로 트레이스를 보내도록 설정했습니다.</p>
+        <p class="code-label">재현 코드</p>
+<pre><code>from phoenix.otel import register
+
+register(
+    project_name="repro",
+    endpoint="http://localhost:6006/v1/traces",   <span class="cm"># HTTP로 전송</span>
+    headers={"authorization": "Bearer secret"},
+)</code></pre>
+        <p class="code-label">결과</p>
+<pre><code>Traceback (most recent call last):
+  File ".../phoenix/otel/otel.py", line 194, in register
+    details = tracer_provider._tracing_details()
+  File ".../phoenix/otel/otel.py", line 337, in _tracing_details
+    headers = _printable_headers(exporter._headers)
+<span class="err">AttributeError: 'HTTPSpanExporter' object has no attribute '_headers'</span></code></pre>
+
+        <h3>설정에 따라 결과가 달랐다</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>설정</th><th>전송 방식</th><th>결과</th></tr></thead>
+            <tbody>
+              <tr><td><code>register()</code> (주소 지정 안 함)</td><td>gRPC · 4317</td><td class="add">정상</td></tr>
+              <tr><td><code>register(protocol="grpc")</code></td><td>gRPC</td><td class="add">정상</td></tr>
+              <tr><td><code>register(endpoint="http://localhost:6006/v1/traces")</code></td><td>HTTP + protobuf</td><td class="del">AttributeError</td></tr>
+              <tr><td>위와 같은데 <code>verbose=False</code></td><td>HTTP + protobuf</td><td class="del">그래도 AttributeError</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>처음에 아무 설정 없이 돌렸을 때는 재현되지 않았습니다. 기본값이 gRPC였기 때문입니다. <strong>신고자가 쓴 조건(HTTP)을 그대로 따라 해야</strong> 버그가 보였습니다.</p>
+
+        <h3>배너를 끄는데도 왜 죽었나</h3>
+        <p><code>register()</code>는 배너 문자열을 <strong>항상 만들고</strong>, 출력 여부만 <code>verbose</code>로 정합니다. 배너를 만드는 과정에서 헤더를 읽다가 터지니, 출력을 꺼도 소용이 없었습니다.</p>
+<pre><code>details = tracer_provider._tracing_details()   <span class="cm"># verbose와 상관없이 항상 실행</span>
+if verbose:
+    print(f"{details}{global_provider_msg}")   <span class="cm"># 출력만 조건부</span>
+return tracer_provider</code></pre>
+
+        <div class="callout warn">
+          <div class="callout-title">영향 범위</div>
+          <p>Phoenix 서버 주소로 HTTP 전송을 설정한 사용자는 <code>register()</code> 한 줄에서 앱이 멈췄습니다. 게다가 phoenix-otel은 OTel 버전에 상한을 두지 않아서, <strong>새로 설치하는 사람은 모두</strong> 1.45를 받게 되는 상황이었습니다.</p>
+        </div>
+      </section>
+
+      <section id="cause">
+        <h2><span class="num">05</span>원인: 헤더가 다른 서랍으로 옮겨졌다</h2>
+        <p>Phoenix는 배너에 헤더를 보여주려고 exporter 객체의 <code>_headers</code>라는 서랍을 직접 열어보고 있었습니다. 그런데 OTel 1.45에서 HTTP exporter가 새 공용 HTTP 클라이언트를 쓰도록 바뀌면서, 헤더가 <code>_client</code>라는 다른 서랍 안으로 옮겨졌습니다. 밑줄로 시작하는 내부용 속성이라, OTel 입장에서는 예고 없이 옮겨도 되는 부분이었습니다.</p>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 780 246" role="img" aria-label="OTel 1.44 이하와 1.45에서 HTTP exporter가 헤더를 저장하는 위치 비교">
+            <text x="20" y="28" font-weight="700">OTel 1.44 이하</text>
+            <rect class="box" x="20" y="44" width="340" height="190" rx="8"/>
+            <text x="36" y="68" class="mono" font-weight="600">HTTPSpanExporter</text>
+            <line x1="20" y1="80" x2="360" y2="80" stroke="#d1d5db"/>
+            <text x="36" y="106" class="mono">_endpoint</text>
+            <rect class="box-ok" x="28" y="118" width="324" height="28" rx="6"/>
+            <text x="36" y="137" class="mono ok">_headers</text>
+            <text x="344" y="137" text-anchor="end" class="ok">Phoenix가 읽던 곳</text>
+            <text x="36" y="168" class="mono">_session</text>
+            <text x="344" y="168" text-anchor="end" class="muted">기본 헤더는 여기에 따로</text>
+            <text x="36" y="198" class="mono muted">_timeout · _certificate_file …</text>
+
+            <text x="410" y="28" font-weight="700">OTel 1.45</text>
+            <rect class="box" x="410" y="44" width="350" height="190" rx="8"/>
+            <text x="426" y="68" class="mono" font-weight="600">HTTPSpanExporter</text>
+            <line x1="410" y1="80" x2="760" y2="80" stroke="#d1d5db"/>
+            <text x="426" y="106" class="mono">_endpoint · _compression</text>
+            <rect class="box-bad" x="418" y="118" width="334" height="28" rx="6"/>
+            <text x="426" y="137" class="mono bad">_headers</text>
+            <text x="744" y="137" text-anchor="end" class="bad">없음 → AttributeError</text>
+            <rect class="box-ok" x="418" y="156" width="334" height="66" rx="6"/>
+            <text x="430" y="180" class="mono">_client</text>
+            <text x="744" y="180" text-anchor="end" class="muted">_OTLPHTTPClient</text>
+            <text x="430" y="206" class="mono ok">_headers</text>
+            <text x="744" y="206" text-anchor="end" class="muted">사용자 헤더 + 기본 헤더</text>
+          </svg>
+          <figcaption>1.45에서 HTTP exporter의 헤더는 내부 클라이언트(<code>_client</code>)로 옮겨졌고, exporter가 스스로 붙이는 헤더와 합쳐져 저장됩니다.</figcaption>
+        </figure>
+
+        <h3>1.45는 헤더를 이렇게 합친다</h3>
+        <p>OTel 1.45 코드를 직접 열어보니, 사용자 헤더에 exporter 기본 헤더(<code>content-type</code>, <code>user-agent</code>)와 환경변수 헤더를 합쳐 클라이언트에 넘기고 있었습니다. 압축을 켜면 클라이언트가 <code>content-encoding</code>도 추가합니다.</p>
+        <p class="code-label">opentelemetry/exporter/otlp/proto/http/_common/__init__.py (요약)</p>
+<pre><code>def _resolve_headers(headers, headers_env_var):
+    headers_ = {k.lower(): v for k, v in _OTLP_HTTP_HEADERS.items()}  <span class="cm"># content-type, user-agent</span>
+    env_headers = parse_env_headers(...)                               <span class="cm"># 환경변수 헤더</span>
+    headers_.update(env_headers)
+    if headers:
+        headers_.update({key.lower(): value for key, value in headers.items()})  <span class="cm"># 사용자 헤더</span>
+    return headers_</code></pre>
+        <div class="callout note">
+          <div class="callout-title">gRPC 사용자는 왜 괜찮았나</div>
+          <p>이번 리팩터링(#5389)은 HTTP exporter만 바꿨습니다. gRPC exporter에는 <code>_headers</code>가 그대로 남아 있어서 아무 문제가 없었습니다.</p>
+        </div>
+      </section>
+
+      <section id="fix">
+        <h2><span class="num">06</span>해결: 제출한 코드</h2>
+        <p>배너를 만드는 곳에서 헤더를 직접 읽지 않고, 헬퍼 함수를 거치게 바꿨습니다.</p>
+        <p class="code-label">packages/phoenix-otel/src/phoenix/otel/otel.py · 호출하는 곳</p>
+<pre><code><span class="del">-  headers = _printable_headers(exporter._headers)</span>
+<span class="add">+  headers = _printable_headers(_exporter_headers(exporter))</span></code></pre>
+        <p class="code-label">새로 추가한 헬퍼 (docstring 생략)</p>
+<pre><code><span class="cm"># Headers the OTLP HTTP exporter sends with every request on its own</span>
+_OTLP_HTTP_EXPORTER_DEFAULT_HEADERS = frozenset({"content-encoding", "content-type", "user-agent"})
+
+
+def _exporter_headers(exporter: SpanExporter) -&gt; Union[List[Tuple[str, str]], Dict[str, str]]:
+    headers: Optional[Union[List[Tuple[str, str]], Dict[str, str]]] = getattr(
+        exporter, "_headers", None
+    )
+    if headers is not None:
+        return headers
+    client = getattr(exporter, "_client", None)
+    client_headers: Dict[str, str] = getattr(client, "_headers", None) or {}
+    return {
+        key: value
+        for key, value in client_headers.items()
+        if key.lower() not in _OTLP_HTTP_EXPORTER_DEFAULT_HEADERS
+    }</code></pre>
+
+        <h3>설계에서 고민한 세 가지</h3>
+        <ol>
+          <li><strong>두 위치를 모두 확인합니다.</strong> 예전 위치(<code>exporter._headers</code>)에 값이 있으면 그걸 쓰고, 없으면 새 위치(<code>exporter._client._headers</code>)를 봅니다. 그래서 1.43, 1.44, 1.45 어디서나 동작합니다. 당시 저장소의 lock 파일은 1.43이었습니다.</li>
+          <li><strong>기본 헤더를 걸러냅니다.</strong> 걸러내지 않으면 배너가 아래 첫 줄처럼 바뀝니다. 사용자가 넣지도 않은 헤더가 <code>****</code>로 가려진 채 보이면 헷갈립니다. 걸러내면 1.44 이하와 똑같이 나옵니다.</li>
+          <li><strong>테스트도 같은 헬퍼를 씁니다.</strong> 기존 테스트 두 개도 <code>exporter._headers</code>를 직접 읽다가 1.45에서 깨졌기 때문입니다.</li>
+        </ol>
+<pre><code><span class="cm"># 걸러내지 않았을 때</span>
+Transport Headers: {'content-type': '****', 'user-agent': '****', 'authorization': '****'}
+<span class="cm"># 걸러냈을 때 (1.44 이하와 같음)</span>
+Transport Headers: {'authorization': '****'}</code></pre>
+
+        <h3>추가한 회귀 테스트</h3>
+        <p>HTTP 주소와 인증 헤더로 <code>register()</code>를 부른 뒤, 배너에 헤더 이름만 가려진 채 나오고 토큰 값은 새지 않는지 확인합니다.</p>
+<pre><code>def test_register_with_http_endpoint_masks_headers_in_tracing_details(self) -&gt; None:
+    tracer_provider = register(
+        endpoint="http://localhost:6006/v1/traces",
+        headers={"Authorization": "Bearer token123"},
+        verbose=False,
+        set_global_tracer_provider=False,
+    )
+
+    details = tracer_provider._tracing_details()
+
+    assert "Transport: HTTP + protobuf" in details
+    assert "Transport Headers: {'authorization': '****'}" in details
+    assert "token123" not in details</code></pre>
+      </section>
+
+      <section id="verify">
+        <h2><span class="num">07</span>검증</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>확인 항목</th><th>수정 전</th><th>수정 후</th></tr></thead>
+            <tbody>
+              <tr><td>pytest · OTel 1.45.0</td><td class="del">4개 실패 · 129개 통과 (Python 3.12)</td><td class="add">134개 통과 (Python 3.14)</td></tr>
+              <tr><td>pytest · OTel 1.44.0 · Python 3.12</td><td>—</td><td class="add">134개 통과</td></tr>
+              <tr><td>pytest · OTel 1.43.0 (저장소 lock 버전)</td><td>—</td><td class="add">134개 통과</td></tr>
+              <tr><td>mypy (strict 모드)</td><td>—</td><td class="add">통과</td></tr>
+              <tr><td>ruff check · ruff format</td><td>—</td><td class="add">통과</td></tr>
+              <tr><td>신고자 시나리오 다시 실행</td><td class="del">AttributeError</td><td class="add"><code>{'authorization': '****'}</code> 정상 출력</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="callout">
+          <div class="callout-title">검증하면서 겪은 환경 문제</div>
+          <ul>
+            <li>저장소가 uv 0.12.17을 요구해서, 로컬 uv(0.12.10)로는 명령이 막혔습니다. 저장소 설정을 건너뛰는 <code>--no-config</code> 옵션으로 격리된 가상환경을 따로 만들어 테스트했습니다.</li>
+            <li>패키지를 editable 모드로 설치하면 mypy가 같은 파일을 두 모듈 이름(<code>src.phoenix.otel</code>, <code>phoenix.otel</code>)으로 인식해 오류를 냈습니다. CI처럼 일반 설치로 바꿔서 돌렸습니다.</li>
+            <li>새로 추가한 테스트가 처음에는 실패했습니다. 1.45에서 기본 헤더가 섞여 나오는 걸 이 테스트로 발견했고, 그래서 헬퍼에 필터를 넣게 됐습니다.</li>
+          </ul>
+        </div>
+      </section>
+
+      <section id="maintainer">
+        <h2><span class="num">08</span>메인테이너가 바꾼 부분</h2>
+        <p>메인테이너는 PR을 승인한 뒤, 방향을 조금 바꾸는 커밋을 직접 더했습니다.</p>
+        <ul>
+          <li><strong>호환 분기 삭제</strong>: 1.44 이하를 위한 분기를 지우고, phoenix-otel이 <code>opentelemetry-exporter-otlp-proto-http&gt;=1.45.0</code>을 필수로 요구하게 했습니다.</li>
+          <li><strong>헬퍼 단순화</strong>: <code>getattr</code>로 추측하는 대신, <code>isinstance</code>로 HTTP와 gRPC를 명확히 나눴습니다.</li>
+          <li><strong>저장소 전체 버전 올림</strong>: 저장소 전체의 OTel 버전 고정을 1.45.0/0.66b0으로 올리고 lock 파일을 갱신했습니다.</li>
+          <li><strong>연쇄 문제 처리</strong>: opentelemetry-api 1.45의 <code>AttributeValue</code> 타입 별칭을 mypy가 받아들이지 않는 문제도 Phoenix 쪽에서 우회했습니다.</li>
+        </ul>
+        <p class="code-label">main에 들어간 최종 코드</p>
+<pre><code>def _exporter_headers(exporter: SpanExporter) -&gt; Dict[str, str]:
+    if isinstance(exporter, _HTTPSpanExporter):
+        return {
+            key: value
+            for key, value in exporter._client._headers.items()
+            if key.lower() not in _OTLP_HTTP_EXPORTER_OWN_HEADERS
+        }
+    if isinstance(exporter, _GRPCSpanExporter):
+        headers = exporter._headers
+        if isinstance(headers, (dict, list, tuple)):
+            return dict(headers)
+    return {}</code></pre>
+        <div class="callout note">
+          <div class="callout-title">왜 호환성을 버렸을까</div>
+          <p>호환 분기를 두면 "이 속성이 있을까?" 하고 추측하는 코드가 남고, 테스트해야 할 버전 조합도 늘어납니다. 최소 버전을 올리면 타입이 분명해지고 코드가 짧아집니다. 대신 구버전 OTel을 쓰는 사람은 OTel도 같이 올려야 합니다. 저장소 전체 버전을 올리는 일은 외부 기여자가 하기엔 범위가 커서 메인테이너가 직접 한 것으로 보입니다.</p>
+          <p>다음 PR에서 참고할 점: 이 팀은 <strong>넓은 호환성보다 단순한 코드</strong>를 선호합니다.</p>
+        </div>
+        <p>핵심 아이디어는 그대로 남았습니다. 클라이언트에서 헤더를 읽고, exporter가 스스로 붙인 헤더는 걸러내며, 회귀 테스트로 이를 확인하는 방식입니다.</p>
+      </section>
+
+      <section id="result">
+        <h2><span class="num">09</span>결과</h2>
+        <dl class="kv">
+          <dt>머지</dt><dd>2026-09-29 05:48 · 커밋 3개를 하나로 합치는 스쿼시 머지 · <a href="https://github.com/Arize-ai/phoenix/commit/70c5051460a199410145913fe2513799bfeb1eaa" target="_blank" rel="noopener">70c5051</a></dd>
+          <dt>커밋 작성자</dt><dd>TaehunOh (RosieOh). 메인테이너 커밋의 공동 작성자 표기도 함께 합쳐졌습니다.</dd>
+          <dt>배포</dt><dd>arize-phoenix-otel 0.17.2 · PyPI · 머지 12분 뒤</dd>
+          <dt>이슈</dt><dd>#16547이 "완료"로 자동으로 닫힘</dd>
+        </dl>
+        <p class="code-label">packages/phoenix-otel/CHANGELOG.md (링크 생략)</p>
+<pre><code>## 0.17.2 (2026-09-28)
+
+### Bug Fixes
+
+* otel: fix register() crash with opentelemetry-exporter-otlp-proto-http 1.45 (#16549) (70c5051)</code></pre>
+      </section>
+
+      <section id="lessons">
+        <h2><span class="num">10</span>배운 점</h2>
+        <ol>
+          <li><strong>내부 속성에 기대는 코드는 업데이트 한 번에 깨진다.</strong> 공개 API가 있으면 그걸 쓰고, 없다면 방어 코드와 테스트로 감싸야 합니다.</li>
+          <li><strong>버전 상한이 없으면 새로 설치하는 사용자부터 깨진다.</strong> 상한을 두면 안전하지만 다른 패키지와 충돌할 수 있습니다. 어느 쪽을 택할지는 트레이드오프입니다.</li>
+          <li><strong>재현은 정확한 조건으로 해야 한다.</strong> 기본값(gRPC)으로는 재현되지 않았고, 신고자의 HTTP 설정을 그대로 따라 해야 보였습니다.</li>
+          <li><strong>고칠 때 다른 동작을 바꾸지 않는다.</strong> 기본 헤더를 걸러서 배너 출력이 예전과 같게 유지했습니다.</li>
+          <li><strong>머지된 최종 코드와 비교한다.</strong> 메인테이너가 무엇을 바꿨는지 보면 그 프로젝트가 무엇을 중요하게 여기는지 보입니다.</li>
+        </ol>
+      </section>
+
+      <section id="qa">
+        <h2><span class="num">11</span>스스로 설명해보기</h2>
+        <p>면접에서 이 PR에 대해 나올 만한 질문입니다. 답을 펼치기 전에 먼저 말로 설명해 보세요.</p>
+
+        <details class="qa">
+          <summary><code>verbose=False</code>로 배너를 꺼도 왜 <code>register()</code>가 죽었나요?</summary>
+          <div class="a"><p><code>register()</code>는 배너 문자열(<code>_tracing_details()</code>)을 항상 만들고, 출력 여부만 <code>verbose</code>로 정합니다. 배너를 만들면서 <code>exporter._headers</code>를 읽는 순간 <code>AttributeError</code>가 났기 때문에 출력 설정과 상관없이 죽었습니다.</p></div>
+        </details>
+
+        <details class="qa">
+          <summary>gRPC를 쓰는 사람은 왜 영향이 없었나요?</summary>
+          <div class="a"><p>OTel 1.45의 리팩터링(PR #5389)은 HTTP exporter만 새 공용 HTTP 클라이언트로 바꿨습니다. gRPC exporter에는 <code>_headers</code> 속성이 그대로 있어서 기존 코드가 계속 동작했습니다.</p></div>
+        </details>
+
+        <details class="qa">
+          <summary>어떻게 재현했나요?</summary>
+          <div class="a"><p>격리된 가상환경에 arize-phoenix-otel 0.17.1과 OpenTelemetry 1.45.0을 설치했습니다. 처음엔 기본값으로 돌렸는데 기본 전송 방식이 gRPC라 재현되지 않았습니다. 신고자처럼 HTTP 주소(<code>http://localhost:6006/v1/traces</code>)를 지정하자 같은 <code>AttributeError</code>가 났습니다. 그 뒤 1.45의 exporter 코드를 열어 헤더가 <code>_client._headers</code>로 옮겨진 것을 확인했습니다.</p></div>
+        </details>
+
+        <details class="qa">
+          <summary><code>content-type</code>과 <code>user-agent</code>는 왜 걸러냈나요?</summary>
+          <div class="a"><p>1.45에서는 클라이언트 헤더에 사용자 헤더와 exporter 기본 헤더가 섞여 저장됩니다. 그대로 보여주면 사용자가 넣지 않은 헤더가 <code>****</code>로 가려진 채 나타나 헷갈립니다. 1.44 이하에서는 기본 헤더가 requests Session에 따로 있어서 <code>_headers</code>에는 사용자 헤더만 있었습니다. 걸러내면 출력이 예전과 같아집니다. 압축을 켜면 붙는 <code>content-encoding</code>도 같은 이유로 걸렀습니다.</p></div>
+        </details>
+
+        <details class="qa">
+          <summary>테스트는 무엇을 보장하나요?</summary>
+          <div class="a"><p>새 회귀 테스트는 HTTP 주소와 인증 헤더로 <code>register()</code>를 부른 뒤, 배너에 <code>{'authorization': '****'}</code>만 나오고 토큰 값은 없는지 확인합니다. 기존 HTTP 테스트 두 개는 헬퍼로 헤더를 읽도록 바꿔서 OTel 버전과 상관없이 검증되게 했습니다. 수정 전 OTel 1.45에서는 4개가 실패했고, 수정 후에는 1.43, 1.44, 1.45 모두에서 134개가 통과했습니다.</p></div>
+        </details>
+
+        <details class="qa">
+          <summary>메인테이너는 왜 구버전 호환 코드를 지웠을까요? 단점은 없나요?</summary>
+          <div class="a"><p>호환 분기를 두면 속성이 있는지 추측하는 코드가 남고, 테스트할 버전 조합이 늘어납니다. 최소 버전을 1.45로 올리면 <code>isinstance</code>로 분명하게 나눌 수 있어 코드가 단순해집니다. 단점은 구버전 OTel에 묶인 사용자가 함께 올려야 한다는 점입니다. 예를 들어 OTel을 1.45 미만으로 제한한 W&amp;B Weave와는 한 환경에 같이 설치할 수 없습니다.</p></div>
+        </details>
+
+        <details class="qa">
+          <summary>내부 속성에 기대는 방식을 아예 없앨 수는 없었나요?</summary>
+          <div class="a"><p>exporter가 헤더를 공개 API로 내주지 않아서 완전히 피하기는 어렵습니다. Phoenix가 exporter에 넘긴 헤더를 따로 보관해 배너에 쓰는 방법도 있습니다. 하지만 OTel이 환경변수(<code>OTEL_EXPORTER_OTLP_HEADERS</code> 등)에서 추가로 읽는 헤더까지 보여주려면 결국 내부를 봐야 합니다. 그래서 내부 속성을 읽되, 테스트로 변화를 바로 잡아내는 쪽을 택했습니다.</p></div>
+        </details>
+
+        <details class="qa">
+          <summary>이 이슈는 어떻게 찾았고, 왜 이걸 골랐나요?</summary>
+          <div class="a"><p>외부 PR이 실제로 머지되는 저장소를 먼저 측정했습니다. Phoenix는 외부인 PR의 36%가 14일 안에 머지됐고, 중앙값이 2.1일이었습니다. 그중 올라온 지 하루 된 버그 신고를 골랐습니다. 영향이 크고 재현 방법이 분명하며, 아무도 가져가지 않은 상태였습니다. 영향이 큰 만큼 메인테이너가 직접 고칠 수도 있어서, 재현과 수정을 먼저 끝내고 코멘트와 PR을 한 번에 올렸습니다.</p></div>
+        </details>
+      </section>
+
+      <div class="pager">
+        <a href="index.html">← 개요</a>
+        <a href="kgateway-14769.html">kgateway #14769 →</a>
+      </div>
+      <div class="footer">기준: 2026년 9월 29일 (한국 시간). 코드는 당시 GitHub 원문을 기준으로 합니다.</div>
+    </main>
+  </div>
+</div>
+
+</body>
+</html>

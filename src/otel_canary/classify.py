@@ -36,8 +36,30 @@ class Verdict:
     suspect_install: bool = False
 
 
-def _first_line(text: str) -> str:
-    return next((line.strip() for line in text.splitlines() if line.strip()), "")
+_NOISE = ("Using Python", "Resolved", "Prepared", "Installed", "Audited", "Uninstalled")
+
+
+def _log_reason(text: str, keywords: tuple[str, ...]) -> str:
+    """The log line with the earliest keyword that appears, else the first line that isn't noise.
+
+    uv wraps the resolver's explanation over indented lines, so those are joined onto the match.
+    """
+    raw = text.splitlines()
+    cleaned = [line.strip().lstrip("×╰─▶ ").strip() for line in raw]
+    candidates = [i for i, line in enumerate(cleaned) if line and not line.startswith(_NOISE)]
+    for keyword in keywords:  # keywords are in order of preference
+        for i in candidates:
+            if keyword not in cleaned[i]:
+                continue
+            parts = [cleaned[i]]
+            for following, text_line in zip(raw[i + 1 :], cleaned[i + 1 :], strict=True):
+                if not following.startswith((" ", "\t")) or not text_line:
+                    break
+                if following.strip().startswith(("×", "╰", "hint", "help")):
+                    break
+                parts.append(text_line)
+            return " ".join(parts)
+    return cleaned[candidates[0]] if candidates else ""
 
 
 def classify(
@@ -46,11 +68,14 @@ def classify(
     received: ReceiverLog | None,
     spec: AdapterSpec,
     used_overrides: bool = False,
+    transport: str = "http",
 ) -> Verdict:
     if install.status == "blocked":
-        return Verdict(Status.BLOCKED, _first_line(install.log) or "the resolver found no solution")
+        reason = _log_reason(install.log, ("Because", "No solution found"))
+        return Verdict(Status.BLOCKED, reason or "the resolver found no solution")
     if install.status != "ok":
-        return Verdict(Status.INFRA, "install failed: " + (_first_line(install.log) or "unknown error"))
+        reason = _log_reason(install.log, ("error", "Error", "failed", "Failed"))
+        return Verdict(Status.INFRA, "install failed: " + (reason or "unknown error"))
     if adapter is None or received is None:
         return Verdict(Status.INFRA, "the adapter did not run")
     if adapter.timed_out:
@@ -69,7 +94,8 @@ def classify(
 
     if received.spans < spec.min_spans:
         return Verdict(Status.DEGRADED, f"expected at least {spec.min_spans} span(s), got {received.spans}")
-    if spec.expect_path and spec.expect_path not in received.accepted_paths():
+    # The expected path is an HTTP detail; gRPC calls always go to the TraceService Export method.
+    if transport == "http" and spec.expect_path and spec.expect_path not in received.accepted_paths():
         return Verdict(Status.DEGRADED, f"no spans arrived at {spec.expect_path}")
     missing = [header for header in spec.expect_headers if header not in received.accepted_headers()]
     if missing:

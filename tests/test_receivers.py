@@ -64,3 +64,23 @@ def test_answers_gets_with_the_configured_json():
     assert configured == {"project_name": "canary"}
     assert default == {}
     assert receiver.log.gets == ["/v1/info", "/anything"]
+
+
+def test_grpc_receiver_records_a_span_and_its_metadata():
+    from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter as GRPCSpanExporter
+
+    from otel_canary.receivers import GRPC_EXPORT_PATH, GRPCReceiver
+
+    with GRPCReceiver() as receiver:
+        provider = TracerProvider()
+        exporter = GRPCSpanExporter(
+            endpoint=receiver.url, insecure=True, headers={"authorization": "Bearer t"}
+        )
+        provider.add_span_processor(SimpleSpanProcessor(exporter))
+        with provider.get_tracer("test").start_as_current_span("span"):
+            pass
+        provider.shutdown()
+
+    assert receiver.log.spans == 1
+    assert receiver.log.accepted_paths() == {GRPC_EXPORT_PATH}
+    assert "authorization" in receiver.log.accepted_headers()

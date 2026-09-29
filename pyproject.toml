@@ -9,6 +9,8 @@ dependencies = [
   # Parses the OTLP payloads the mock receivers get. The SDKs under test are installed in
   # separate virtualenvs, so nothing here constrains their OpenTelemetry versions.
   "opentelemetry-proto>=1.25.0",
+  # The gRPC mock receiver.
+  "grpcio>=1.60.0",
 ]
 
 [project.scripts]
@@ -21,6 +23,7 @@ dev = [
   # Used by the receiver tests to send real OTLP/HTTP requests.
   "opentelemetry-sdk>=1.25.0",
   "opentelemetry-exporter-otlp-proto-http>=1.25.0",
+  "opentelemetry-exporter-otlp-proto-grpc>=1.25.0",
 ]
 
 [build-system]
@@ -45,3 +48,7 @@ extend-exclude = ["docs", "spike"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+# The dashboard's HTML and CSS templates read better unwrapped.
+"src/otel_canary/report.py" = ["E501"]

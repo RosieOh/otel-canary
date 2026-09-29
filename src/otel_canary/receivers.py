@@ -135,3 +135,62 @@ class HTTPReceiver:
         if self._server is not None:
             self._server.shutdown()
             self._server.server_close()
+
+
+GRPC_EXPORT_PATH = "/opentelemetry.proto.collector.trace.v1.TraceService/Export"
+
+
+class GRPCReceiver:
+    """OTLP/gRPC receiver on 127.0.0.1; `url` is `http://127.0.0.1:<port>` and `address` drops the scheme.
+
+    Calls are logged like HTTP posts, with the RPC method as the path and metadata keys as headers.
+    During `fail_for_seconds` calls are aborted with UNAVAILABLE, which OTLP exporters retry.
+    """
+
+    def __init__(self, fail_for_seconds: float = 0.0) -> None:
+        self.log = ReceiverLog()
+        self._fail_for_seconds = fail_for_seconds
+        self._lock = threading.Lock()
+        self._started_at = 0.0
+        self._server: Any = None
+        self.address = ""
+        self.url = ""
+
+    def __enter__(self) -> GRPCReceiver:
+        from concurrent import futures
+
+        import grpc
+        from opentelemetry.proto.collector.trace.v1 import trace_service_pb2_grpc
+
+        receiver = self
+
+        class Servicer(trace_service_pb2_grpc.TraceServiceServicer):
+            def Export(self, request: ExportTraceServiceRequest, context: Any) -> ExportTraceServiceResponse:  # noqa: N802
+                elapsed = time.monotonic() - receiver._started_at
+                failing = elapsed < receiver._fail_for_seconds
+                with receiver._lock:
+                    receiver.log.posts.append(
+                        Post(
+                            path=GRPC_EXPORT_PATH,
+                            status=503 if failing else 200,
+                            spans=0 if failing else count_spans(request),
+                            headers=sorted({key.lower() for key, _ in context.invocation_metadata()}),
+                            at=round(elapsed, 3),
+                        )
+                    )
+                if failing:
+                    context.abort(grpc.StatusCode.UNAVAILABLE, "otel-canary outage window")
+                return ExportTraceServiceResponse()
+
+        self._server = grpc.server(futures.ThreadPoolExecutor(max_workers=4))
+        trace_service_pb2_grpc.add_TraceServiceServicer_to_server(Servicer(), self._server)
+        port = self._server.add_insecure_port("127.0.0.1:0")
+        self._started_at = time.monotonic()
+        self._server.start()
+        self.address = f"127.0.0.1:{port}"
+        self.url = f"http://{self.address}"
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        if self._server is not None:
+            self._server.stop(grace=None)

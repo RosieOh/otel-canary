@@ -8,8 +8,9 @@ module from shadowing the SDK it tests (a `phoenix.py` here would hide the `phoe
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 ADAPTERS_DIR = Path(__file__).parent
 RUNNER = ADAPTERS_DIR / "_runner.py"
@@ -24,6 +25,8 @@ class AdapterSpec:
     expect_path: str | None = None
     expect_headers: tuple[str, ...] = ()
     min_spans: int = 1
+    # JSON bodies the HTTP receiver returns for GETs the SDK makes on the side.
+    get_responses: dict[str, Any] = field(default_factory=dict)
 
 
 ADAPTERS: dict[str, AdapterSpec] = {
@@ -32,7 +35,7 @@ ADAPTERS: dict[str, AdapterSpec] = {
         AdapterSpec(
             name="phoenix",
             package="arize-phoenix-otel",
-            transports=frozenset({"http"}),
+            transports=frozenset({"http", "grpc"}),
             expect_path="/v1/traces",
             expect_headers=("authorization",),
         ),
@@ -46,9 +49,25 @@ ADAPTERS: dict[str, AdapterSpec] = {
         AdapterSpec(
             name="traceloop",
             package="traceloop-sdk",
+            transports=frozenset({"http", "grpc"}),
+            expect_path="/v1/traces",
+            expect_headers=("authorization",),
+        ),
+        AdapterSpec(
+            name="logfire",
+            package="logfire",
             transports=frozenset({"http"}),
             expect_path="/v1/traces",
             expect_headers=("authorization",),
+            # The token check thread asks for project info.
+            get_responses={"/v1/info": {"project_name": "otel-canary", "project_url": "http://127.0.0.1/"}},
+        ),
+        AdapterSpec(
+            name="weave",
+            package="weave",
+            transports=frozenset({"http"}),
+            expect_path="/agents/otel/v1/traces",
+            expect_headers=("project_id",),
         ),
     )
 }

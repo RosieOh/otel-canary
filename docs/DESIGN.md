@@ -190,7 +190,7 @@ otel-canary/
 └── docs/
 ```
 
-- M2에서 `matrix.py`(버전 계산), 리포트 생성기, `nightly.yml`이 추가됩니다.
+- M2에서 `matrix.py`(버전 계산), `report.py`(대시보드·배지·상태 변화), `nightly.yml`이 추가됐습니다.
 - 어댑터 파일 이름에 `adapter_` 접두사를 붙인 이유: 어댑터 디렉터리가 `sys.path` 맨 앞에 오기 때문에, `phoenix.py`라는 파일이 있으면 진짜 `phoenix` 패키지를 가립니다.
 
 ## 12. GitHub Actions 설계
@@ -207,7 +207,7 @@ otel-canary/
 |---|---|---|---|
 | **M0** | 완료 | 스파이크: 알려진 사례 재현, main 설치 검증 | §17 |
 | **M1** | 완료 (2026-09-29) | CLI, HTTP 수신기, 어댑터 3개(Phoenix, Langfuse, traceloop), 로컬 실행 | 골든 케이스 4개 통과 (`tests/test_golden.py`) |
-| **M2** | 2주차 | gRPC 수신기, 어댑터 5개, nightly Actions, JSON 결과, 정적 대시보드, 상태 변화 이슈 | 3일 연속 무인 실행, 가짜 경보 0건 |
+| **M2** | 구현 완료 (2026-09-29) | gRPC 수신기, 어댑터 5개, nightly Actions, JSON 결과, 정적 대시보드, 상태 변화 이슈 | 3일 연속 무인 실행, 가짜 경보 0건 (관찰 중) |
 | **M3** | 3~4주차 | `force` 모드와 `BLOCKED`, main 커밋 범위 첨부, 배지 | Weave·Logfire 상한이 여전히 필요한지 판정 |
 | **M4** | 이후 | 정적 결합 스캔, 자동 bisect, 어댑터 확장, 케이스 스터디 글 | — |
 

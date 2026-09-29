@@ -1,0 +1,107 @@
+name: Nightly
+
+on:
+  schedule:
+    - cron: "0 21 * * *" # 06:00 KST
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
+      - id: plan
+        run: echo "matrix=$(uv run otel-canary plan)" >> "$GITHUB_OUTPUT"
+
+  run:
+    needs: plan
+    name: ${{ matrix.id }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
+      - name: Run the cell
+        env:
+          CELL_ID: ${{ matrix.id }}
+          SDK: ${{ matrix.sdk }}
+          OTEL: ${{ matrix.otel }}
+          TRANSPORT: ${{ matrix.transport }}
+          LABEL: ${{ matrix.label }}
+        run: >
+          uv run otel-canary run --sdk "$SDK" --otel "$OTEL" --transport "$TRANSPORT"
+          --label "$LABEL" --output "results/$CELL_ID.json" --exit-zero
+      - uses: actions/upload-artifact@v7
+        with:
+          name: result-${{ matrix.id }}
+          path: results/${{ matrix.id }}.json
+
+  report:
+    needs: [plan, run]
+    if: ${{ always() && needs.plan.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: result-*
+          path: results
+          merge-multiple: true
+      - name: Fetch the previous results
+        run: |
+          url=$(gh api "repos/$GITHUB_REPOSITORY/pages" --jq .html_url 2>/dev/null || true)
+          if [ -n "$url" ] && curl -fsSL "${url%/}/results.json" -o previous.json; then
+            echo "previous run: $(jq length previous.json) cells"
+          else
+            echo "[]" > previous.json
+            echo "no previous run; this one is the baseline"
+          fi
+      - run: uv run otel-canary report results --previous previous.json --out site
+      - name: Open, update or close alert issues
+        run: |
+          gh label create canary-alert --color B91C1C --description "otel-canary status change" --force
+          jq -c '.[] | select(.kind != "info")' site/changes.json | while read -r change; do
+            title=$(jq -r .title <<< "$change")
+            body=$(jq -r .body <<< "$change")
+            number=$(gh issue list --state open --label canary-alert --limit 200 --json number,title \
+              | jq -r --arg title "$title" '.[] | select(.title == $title) | .number' | head -1)
+            if [ "$(jq -r .kind <<< "$change")" = "broke" ]; then
+              if [ -n "$number" ]; then
+                gh issue comment "$number" --body "$body"
+              else
+                gh issue create --title "$title" --body "$body" --label canary-alert
+              fi
+            elif [ -n "$number" ]; then
+              gh issue close "$number" --comment "$body"
+            fi
+          done
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+      - id: deploy
+        uses: actions/deploy-pages@v5

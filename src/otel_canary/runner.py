@@ -15,7 +15,7 @@ from typing import Any
 from otel_canary.adapters import ADAPTERS, RUNNER, AdapterSpec
 from otel_canary.classify import AdapterOutcome, classify
 from otel_canary.install import create_and_install, otel_requirements
-from otel_canary.receivers import HTTPReceiver
+from otel_canary.receivers import GRPCReceiver, HTTPReceiver
 
 
 @dataclass
@@ -26,6 +26,8 @@ class Cell:
     transport: str = "http"
     python: str = "3.12"
     mode: str = "respect-pins"
+    # The OTel version's role in the matrix ("previous", "latest", "main"); results are compared by it.
+    label: str = ""
 
 
 def _cell_env(endpoint: str, transport: str) -> dict[str, str]:
@@ -80,13 +82,16 @@ def run_cell(cell: Cell, timeout: float = 180) -> dict[str, Any]:
         requirements = [cell.sdk, *otel_requirements(cell.otel, cell.transport)]
         install = create_and_install(workdir, cell.python, requirements)
         if install.status == "ok" and install.python is not None:
-            with HTTPReceiver() as receiver:
+            receiver_cm = (
+                GRPCReceiver() if cell.transport == "grpc" else HTTPReceiver(get_responses=spec.get_responses)
+            )
+            with receiver_cm as receiver:
                 adapter_outcome = run_adapter(
                     install.python, spec, receiver.url, cell.transport, workdir, timeout
                 )
                 time.sleep(0.3)  # let a request that is still in flight land
                 received = receiver.log
-    verdict = classify(install, adapter_outcome, received, spec)
+    verdict = classify(install, adapter_outcome, received, spec, transport=cell.transport)
 
     adapter_log = ""
     if adapter_outcome is not None:

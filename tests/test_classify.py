@@ -86,3 +86,24 @@ def test_missing_header_is_degraded():
 def test_healthy_export_passes():
     verdict = classify(INSTALLED, RAN, _log(_post()), SPEC)
     assert verdict.status is Status.PASS
+
+
+def test_blocked_reason_is_the_resolvers_whole_explanation():
+    log = (
+        "Using Python 3.12.14 environment at: /tmp/venv\n"
+        "  × No solution found when resolving dependencies:\n"
+        "  ╰─▶ Because logfire==5.1.1 depends on opentelemetry-sdk>=1.39.0,<1.45.0\n"
+        "      and you require opentelemetry-sdk==1.45.0, we can conclude that your requirements are\n"
+        "      unsatisfiable.\n"
+    )
+    verdict = classify(InstallOutcome("blocked", log=log), None, None, SPEC)
+    assert verdict.reason == (
+        "Because logfire==5.1.1 depends on opentelemetry-sdk>=1.39.0,<1.45.0 and you require "
+        "opentelemetry-sdk==1.45.0, we can conclude that your requirements are unsatisfiable."
+    )
+
+
+def test_grpc_cells_skip_the_http_path_check():
+    grpc_post = _post(path="/opentelemetry.proto.collector.trace.v1.TraceService/Export")
+    assert classify(INSTALLED, RAN, _log(grpc_post), SPEC, transport="grpc").status is Status.PASS
+    assert classify(INSTALLED, RAN, _log(grpc_post), SPEC, transport="http").status is Status.DEGRADED

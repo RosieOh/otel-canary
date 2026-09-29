@@ -232,7 +232,7 @@ otel-canary/
 1. GitHub에 `otel-canary` 공개 저장소를 만듭니다. 설명(description)은 "Daily compatibility canary for LLM observability SDKs against OpenTelemetry Python releases and main"을 씁니다.
 2. ~~어댑터 조사 표를 만듭니다.~~ 완료: [docs/adapters.md](adapters.md)
 3. **M1을 구현합니다.** `spike/`와 조사 문서는 참고만 하고 새로 작성합니다. 작업 단위는 GitHub 이슈(M1 마일스톤)로 나눠 두었습니다.
-4. 골든 케이스 두 개가 기대대로 판정되는지 확인합니다.
+4. 골든 케이스(이슈 #7의 네 셀)가 기대대로 판정되는지 확인합니다.
 
 ## 17. M0 스파이크 결과 (2026-09-29)
 
@@ -254,7 +254,7 @@ otel-canary/
 
 자세한 내용은 [docs/adapters.md](adapters.md)에 있습니다.
 
-- **traceloop-sdk 0.62.3은 지금 깨끗한 환경에서 설치하면 동작하지 않습니다.** `requests`를 import하지만 의존성으로 선언하지 않아서, OTel 1.45(기본 설치)에서 `ModuleNotFoundError`가 납니다. 1.44까지는 OTel HTTP exporter가 `requests`를 끌고 들어와 가려져 있었습니다. 카나리가 없었다면 사용자가 먼저 발견했을 종류의 문제입니다.
+- **traceloop-sdk 0.62.3은 지금 깨끗한 환경에서 설치하면 동작하지 않습니다.** `requests`와 `httpx`를 import하지만 둘 다 의존성으로 선언하지 않았습니다. OTel 1.45(기본 설치)에서는 `requests`에서, 1.44로 고정하면 `httpx`에서 `ModuleNotFoundError`가 납니다. 처음엔 OTel 1.45가 원인이라고 봤지만, 1.44로 다시 돌려 보고 원인이 더 넓다는 걸 확인했습니다. [traceloop/openllmetry#4526](https://github.com/traceloop/openllmetry/issues/4526)으로 보고했습니다.
 - **Weave의 1.45 상한은 필요합니다.** 강제로 1.45를 설치하면 `_session` 속성 오류로 실패합니다.
 - **Logfire의 1.45 상한은 `requests` 선언으로 풀릴 가능성이 있습니다.** 강제 1.45에서 `requests`만 추가하면 실제 경로까지 통과했습니다. 재시도 경로는 확인하지 않았습니다.
 - **설계 보강**: 1.45 깨짐의 큰 유형은 "선언되지 않은 의존성"이었습니다. SDK가 import하는 모듈이 선언된 의존성으로 설치되는지 검사하는 기능을 M3 후보로 추가합니다.

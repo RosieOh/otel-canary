@@ -10,7 +10,7 @@
 | arize-phoenix-otel 0.17.2 | `register(endpoint=...)` | HTTP, gRPC | 아니오 | OTel 1.45 · **PASS** | — (기본이 1.45) |
 | langfuse 4.15.6 | `Langfuse(public_key, secret_key, base_url=...)` | HTTP | 아니오 (가짜 키로 충분) | OTel 1.45 · **PASS** | — (기본이 1.45) |
 | logfire 5.1.1 | 실제 경로: `configure(token=..., advanced=AdvancedOptions(base_url=...))` | HTTP | 아니오 (가짜 토큰으로 충분) | OTel 1.44 · **PASS** | **FAIL** `requests` 없음 → `requests` 추가 시 PASS |
-| traceloop-sdk 0.62.3 | `Traceloop.init(api_endpoint=..., telemetry_enabled=False)` | HTTP(`http://`), gRPC(`grpc://`) | 아니오 | OTel 1.45 · **FAIL** `requests` 없음 | — (기본이 1.45) |
+| traceloop-sdk 0.62.3 | `Traceloop.init(api_endpoint=..., telemetry_enabled=False)` | HTTP(`http://`), gRPC(`grpc://`) | 아니오 | OTel 1.45 · **FAIL** `requests` 미선언 (1.44에서도 `httpx` 미선언으로 FAIL) | — (기본이 1.45) |
 | weave 0.53.11 | 비공개 함수 `_setup_conversation_tracing()` + `WF_TRACE_SERVER_URL` | HTTP | 공개 경로는 W&B 계정 필요 | OTel 1.44 · **PASS** | **FAIL** `_session` 없음 |
 
 ## 2. SDK별 상세
@@ -55,9 +55,15 @@
       import requests
   ModuleNotFoundError: No module named 'requests'
   ```
-  - traceloop-sdk 0.62.3은 `fetcher.py`, `images/image_uploader.py`, `datasets/attachment.py`, `client/http.py`에서 `requests`를 import하지만 의존성으로 선언하지 않습니다.
-  - OTel 1.44까지는 HTTP exporter가 `requests`를 끌고 들어와 가려져 있었습니다. 1.45에서 exporter가 urllib3로 바뀌면서, 깨끗한 환경에 `pip install traceloop-sdk`만 하면 `from traceloop.sdk import Traceloop`에서 바로 죽습니다.
-  - 2026-09-29 기준 traceloop/openllmetry에 관련 이슈가 없고, main의 `pyproject.toml`에도 `requests`가 없습니다. 같은 유형의 사례로 appsignal-python [#291](https://github.com/appsignal/appsignal-python/issues/291)이 있습니다.
+  - traceloop-sdk 0.62.3은 import하는 순간 **`requests`와 `httpx`를 모두 쓰지만, 둘 다 의존성으로 선언하지 않습니다.**
+    - `requests`: `client/http.py`, `datasets/attachment.py`, `fetcher.py`, `images/image_uploader.py`
+    - `httpx`: `client/client.py`, `evaluator/evaluator.py`, `evaluator/stream_client.py`, `experiment/experiment.py`, `guardrail/guardrail.py`
+  - 그래서 깨끗한 환경에서는 **OTel 버전과 상관없이** import가 실패합니다.
+    - OTel 1.45 (기본 설치): `requests`에서 실패. 1.45 exporter가 더 이상 `requests`를 끌고 오지 않습니다.
+    - OTel 1.44 고정: `requests`는 exporter를 통해 들어오지만, `httpx`에서 실패합니다.
+  - OpenAI SDK처럼 `httpx`를 설치하는 패키지와 함께 쓰는 경우가 많아 가려져 있었던 것으로 보입니다.
+  - 처음에는 "OTel 1.45 때문"이라고 판단했지만, 1.44로 고정해서 다시 돌려 보고 원인이 더 넓다는 걸 알았습니다. **버전 하나만 보고 원인을 단정하면 안 된다**는 사례입니다.
+  - **보고함**: [traceloop/openllmetry#4526](https://github.com/traceloop/openllmetry/issues/4526) (2026-09-29). 같은 유형의 사례로 appsignal-python [#291](https://github.com/appsignal/appsignal-python/issues/291)이 있습니다.
 
 ### weave
 
@@ -71,7 +77,7 @@
 ## 3. 설계에 반영할 점
 
 1. **스모크는 SDK의 실제 전송 경로를 타야 한다.** Logfire를 표준 OTLP 경로로만 테스트하면 자사 exporter와 커스텀 세션을 놓칩니다.
-2. **"선언되지 않은 의존성"이 1.45 깨짐의 큰 유형이다.** traceloop, Logfire, appsignal이 모두 `requests`를 OTel을 통해 간접적으로 얻고 있었습니다. 설치 단계에서 "SDK가 import하는 모듈이 SDK의 선언 의존성으로 설치되는가"를 따로 검사하는 기능을 고려합니다 (`import` 목록과 `requires_dist` 비교).
+2. **"선언되지 않은 의존성"이 큰 유형이다.** traceloop, Logfire, appsignal이 모두 `requests`를 OTel을 통해 간접적으로 얻고 있었고, traceloop은 `httpx`도 선언하지 않았습니다. 설치 단계에서 "SDK가 import하는 모듈이 SDK의 선언 의존성으로 설치되는가"를 따로 검사하는 기능을 고려합니다 (`import` 목록과 `requires_dist` 비교).
 3. **수신기는 부수 요청에도 그럴듯하게 답해야 한다.** Logfire의 `GET /v1/info` 같은 요청이 있습니다.
 4. **force 모드는 상한이 여전히 필요한지 판정할 수 있다.** 이번 조사에서 Weave는 "필요함", Logfire는 "`requests` 선언으로 풀릴 가능성 있음"으로 나왔습니다.
 
@@ -79,5 +85,5 @@
 
 | 대상 | 내용 | 상태 |
 |---|---|---|
-| traceloop/openllmetry | traceloop-sdk가 `requests`를 선언하지 않아 OTel 1.45 환경에서 import 실패 | 미보고 (2026-09-29) |
+| traceloop/openllmetry | traceloop-sdk가 `requests`와 `httpx`를 선언하지 않아 깨끗한 환경에서 import 실패 | [#4526](https://github.com/traceloop/openllmetry/issues/4526) 보고 (2026-09-29) |
 | pydantic/logfire | `requests` 선언 누락. 선언하면 1.45 상한을 풀 수 있는지 논의 | 재시도 경로 확인 뒤 판단 |

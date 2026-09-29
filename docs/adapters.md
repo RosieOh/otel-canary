@@ -42,7 +42,11 @@
 - **결과**
   - OTel 1.44 (기본): 두 경로 모두 PASS
   - OTel 1.45 강제: 두 경로 모두 **FAIL** `ModuleNotFoundError: No module named 'requests'`. logfire 5.1.1은 `requests`를 필수 의존성으로 선언하지 않습니다.
-  - OTel 1.45 강제 + `requests` 설치: 두 경로 모두 **PASS**. 스모크 수준에서는 상한의 원인이 `requests` 선언 누락뿐일 수 있습니다. 다만 커스텀 세션의 재시도(DiskRetryer) 동작은 확인하지 않았습니다. **추가 확인 필요.**
+  - OTel 1.45 강제 + `requests` 설치: 두 경로 모두 정상 경로 스모크는 **PASS**. 하지만 **장애 주입 실험에서 FAIL**:
+    수신기가 처음 15초 동안 503을 돌려주게 하면, OTel 1.44에서는 배치가 `DiskRetryer`로 넘어가 장애 뒤(20~26초)에 도착하지만,
+    OTel 1.45에서는 약 8초 만에 재시도를 포기하고 span이 **유실**됩니다. 1.45의 `RequestsHTTPTransport`가 세션의 `post()`가 아니라
+    `request()`를 부르는데, Logfire는 재시도와 디스크 재시도를 `post()`에만 걸어두었기 때문입니다 (main에서도 동일).
+    → **상한은 필요합니다.** `requests` 선언은 Logfire main에서 이미 고쳐졌습니다(`logfire-sdk`). [pydantic/logfire#2497](https://github.com/pydantic/logfire/issues/2497)로 알렸습니다.
 
 ### traceloop-sdk
 
@@ -79,11 +83,12 @@
 1. **스모크는 SDK의 실제 전송 경로를 타야 한다.** Logfire를 표준 OTLP 경로로만 테스트하면 자사 exporter와 커스텀 세션을 놓칩니다.
 2. **"선언되지 않은 의존성"이 큰 유형이다.** traceloop, Logfire, appsignal이 모두 `requests`를 OTel을 통해 간접적으로 얻고 있었고, traceloop은 `httpx`도 선언하지 않았습니다. 설치 단계에서 "SDK가 import하는 모듈이 SDK의 선언 의존성으로 설치되는가"를 따로 검사하는 기능을 고려합니다 (`import` 목록과 `requires_dist` 비교).
 3. **수신기는 부수 요청에도 그럴듯하게 답해야 한다.** Logfire의 `GET /v1/info` 같은 요청이 있습니다.
-4. **force 모드는 상한이 여전히 필요한지 판정할 수 있다.** 이번 조사에서 Weave는 "필요함", Logfire는 "`requests` 선언으로 풀릴 가능성 있음"으로 나왔습니다.
+4. **force 모드는 상한이 여전히 필요한지 판정할 수 있다.** 이번 조사에서 Weave와 Logfire 모두 "필요함"으로 나왔습니다. Logfire는 정상 경로만 봤을 때 "풀려도 될 것 같다"는 **틀린 결론**이 나왔고, 장애 주입으로 뒤집혔습니다.
+5. **정상 경로 스모크만으로는 부족하다.** 재시도처럼 실패할 때만 도는 경로의 회귀는 수신기가 일정 시간 오류를 돌려주는 **장애 주입 시나리오**가 있어야 잡힙니다.
 
 ## 4. 업스트림에 보고할 수 있는 소견
 
 | 대상 | 내용 | 상태 |
 |---|---|---|
-| traceloop/openllmetry | traceloop-sdk가 `requests`와 `httpx`를 선언하지 않아 깨끗한 환경에서 import 실패 | [#4526](https://github.com/traceloop/openllmetry/issues/4526) 보고 (2026-09-29) |
-| pydantic/logfire | `requests` 선언 누락. 선언하면 1.45 상한을 풀 수 있는지 논의 | 재시도 경로 확인 뒤 판단 |
+| traceloop/openllmetry | traceloop-sdk가 `requests`와 `httpx`를 선언하지 않아 깨끗한 환경에서 import 실패 | 이슈 [#4526](https://github.com/traceloop/openllmetry/issues/4526), 수정 PR [#4527](https://github.com/traceloop/openllmetry/pull/4527) (2026-09-29) |
+| pydantic/logfire | OTel 1.45의 requests 전송 계층이 `OTLPExporterHttpSession`의 재시도·디스크 재시도를 우회 (상한을 올릴 때 주의) | [#2497](https://github.com/pydantic/logfire/issues/2497) 보고 (2026-09-29) |

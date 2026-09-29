@@ -1,3 +1,4 @@
+import html
 import json
 
 from otel_canary import report
@@ -95,3 +96,11 @@ def test_a_cell_new_to_the_matrix_sets_its_baseline():
     [change] = report.changes(previous, current, "2026-09-29")
 
     assert (change["key"], change["kind"], change["from"]) == ("phoenix:http:main", "info", None)
+
+
+def test_long_reasons_are_shortened_in_the_table_but_kept_in_details():
+    long_reason = "Because " + "some-package>=1.0 depends on another-package " * 10 + "unsatisfiable."
+    page = report.render_html([_result(status="BLOCKED", reason=long_reason)], [], "now")
+
+    assert page.count(html.escape(long_reason)) == 1  # only inside the details
+    assert "…" in page

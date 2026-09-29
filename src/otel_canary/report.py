@@ -22,6 +22,7 @@ BADGE_COLORS = {
     "INFRA": "yellow",
 }
 REPO_URL = "https://github.com/RosieOh/otel-canary"
+REASON_CHARS = 140
 COLUMN_TITLES = {
     "previous": "previous release",
     "latest": "latest release",
@@ -179,11 +180,18 @@ def _cell_html(result: dict[str, Any] | None) -> str:
     package = cell["sdk"].split("==")[0]
     shown = {name: versions[name] for name in (package, "opentelemetry-sdk") if name in versions}
     log = ((result.get("logs") or {}).get("adapter") or "").strip()[-2000:]
+    reason = result["reason"]
+    # Resolver explanations run long; keep the table scannable and put the full text in details.
+    short = reason if len(reason) <= REASON_CHARS else reason[:REASON_CHARS].rsplit(" ", 1)[0] + " …"
     parts = [
         f'<td><span class="badge {status}">{status}</span> ',
         f'<span class="small muted">{html.escape(cell["sdk"].split("==")[-1])} · otel {html.escape(_otel_text(cell))}</span>',
-        f'<div class="small">{html.escape(result["reason"])}</div>',
+        f'<div class="small">{html.escape(short)}</div>',
         "<details><summary>details</summary>",
+    ]
+    if short != reason:
+        parts.append(f'<div class="small">{html.escape(reason)}</div>')
+    parts += [
         f'<div class="small">reproduce: <code>{html.escape(_repro(cell))}</code></div>',
         f"<pre>{html.escape(json.dumps(shown, indent=2))}</pre>",
     ]
@@ -207,7 +215,7 @@ def render_html(current: list[dict[str, Any]], found: list[dict[str, Any]], gene
     if found:
         items = "".join(
             f'<li><span class="badge {html.escape(c["to"])}">{html.escape(c["to"])}</span> '
-            f'{html.escape(c["title"])} <span class="muted small">from {html.escape(str(c["from"]))}</span></li>'
+            f'{html.escape(c["title"])} <span class="muted small">{"new cell" if c["from"] is None else "from " + html.escape(c["from"])}</span></li>'
             for c in found
         )
         changed = f"<ul>{items}</ul>"

@@ -130,7 +130,7 @@ class Adapter(Protocol):
 ```
 
 - **Phoenix**: 스파이크로 확인했습니다. `register(endpoint=..., headers=..., batch=False)`를 부른 뒤 span을 만들고 `force_flush()`를 호출합니다.
-- **나머지 SDK는 조사가 필요합니다.** 각 SDK를 가짜 로컬 엔드포인트로 보내는 공식 방법, 필요한 환경 변수와 계정, 네트워크 의존 여부를 확인해야 합니다. 첫 주 과제입니다 (§16).
+- **나머지 SDK는 [docs/adapters.md](adapters.md)에 조사 결과가 있습니다.** 로컬로 보내는 방법, 전송 방식, 계정 필요 여부, 내부 결합, 실측 결과를 SDK별로 정리했습니다. 특히 Logfire는 표준 OTLP 경로가 아니라 **자사 exporter를 거치는 실제 경로**를 테스트해야 합니다.
 - 어댑터는 최소 시나리오만 담습니다. SDK API가 바뀌어도 고칠 곳이 적어야 하기 때문입니다.
 
 ## 8. 조기 경보: OTel main 설치
@@ -230,8 +230,8 @@ otel-canary/
 ## 16. 첫 주에 해볼 일
 
 1. GitHub에 `otel-canary` 공개 저장소를 만듭니다. 설명(description)은 "Daily compatibility canary for LLM observability SDKs against OpenTelemetry Python releases and main"을 씁니다.
-2. **어댑터 조사 표를 만듭니다.** Langfuse, Logfire, Weave, traceloop 각각에 대해 로컬 엔드포인트로 보내는 공식 방법, 필요한 환경 변수와 계정, 지원하는 전송 방식을 공식 문서 기준으로 정리합니다.
-3. **M1을 구현합니다.** `spike/`는 참고만 하고 새로 작성합니다.
+2. ~~어댑터 조사 표를 만듭니다.~~ 완료: [docs/adapters.md](adapters.md)
+3. **M1을 구현합니다.** `spike/`와 조사 문서는 참고만 하고 새로 작성합니다. 작업 단위는 GitHub 이슈(M1 마일스톤)로 나눠 두었습니다.
 4. 골든 케이스 두 개가 기대대로 판정되는지 확인합니다.
 
 ## 17. M0 스파이크 결과 (2026-09-29)
@@ -249,3 +249,12 @@ otel-canary/
 
 - 첫 main 실행은 `ModuleNotFoundError: urllib3`로 실패했습니다. OTel 버그가 아니라, override가 `[urllib3]` extras를 지운 설치 문제였습니다. `INFRA` 분류와 extras 보존이 왜 필요한지 보여주는 사례입니다.
 - 수신한 헤더를 비교했더니, 1.44는 `accept`와 `connection`을 보내고 1.45는 보내지 않았습니다. 전송 계층이 requests에서 urllib3로 바뀐 흔적입니다. 버그는 아니지만, 헤더 비교만으로 이런 **동작 변화**를 잡을 수 있다는 뜻입니다. `DEGRADED` 판정에 쓸 수 있습니다.
+
+## 18. 어댑터 조사에서 나온 소견 (2026-09-29)
+
+자세한 내용은 [docs/adapters.md](adapters.md)에 있습니다.
+
+- **traceloop-sdk 0.62.3은 지금 깨끗한 환경에서 설치하면 동작하지 않습니다.** `requests`를 import하지만 의존성으로 선언하지 않아서, OTel 1.45(기본 설치)에서 `ModuleNotFoundError`가 납니다. 1.44까지는 OTel HTTP exporter가 `requests`를 끌고 들어와 가려져 있었습니다. 카나리가 없었다면 사용자가 먼저 발견했을 종류의 문제입니다.
+- **Weave의 1.45 상한은 필요합니다.** 강제로 1.45를 설치하면 `_session` 속성 오류로 실패합니다.
+- **Logfire의 1.45 상한은 `requests` 선언으로 풀릴 가능성이 있습니다.** 강제 1.45에서 `requests`만 추가하면 실제 경로까지 통과했습니다. 재시도 경로는 확인하지 않았습니다.
+- **설계 보강**: 1.45 깨짐의 큰 유형은 "선언되지 않은 의존성"이었습니다. SDK가 import하는 모듈이 선언된 의존성으로 설치되는지 검사하는 기능을 M3 후보로 추가합니다.

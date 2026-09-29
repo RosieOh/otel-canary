@@ -40,7 +40,17 @@ def _build_parser() -> argparse.ArgumentParser:
     run.add_argument(
         "--sdk", required=True, help=f'SDK requirement, e.g. "arize-phoenix-otel==0.17.1" ({known})'
     )
-    run.add_argument("--otel", required=True, help="OpenTelemetry Python release, e.g. 1.45.0")
+    run.add_argument("--otel", required=True, help='OpenTelemetry Python release, e.g. 1.45.0, or "main"')
+    run.add_argument(
+        "--mode",
+        choices=["respect-pins", "force"],
+        default="respect-pins",
+        help="force overrides the SDK's own OpenTelemetry bounds (main always installs this way)",
+    )
+    run.add_argument("--core-ref", default="", help="with --otel main: opentelemetry-python commit")
+    run.add_argument(
+        "--contrib-ref", default="", help="with --otel main: opentelemetry-python-contrib commit"
+    )
     run.add_argument("--transport", choices=["http", "grpc"], default="http")
     run.add_argument("--python", default="3.12", help="Python version for the cell (default: 3.12)")
     run.add_argument("--timeout", type=float, default=180, help="seconds allowed for the adapter to run")
@@ -90,7 +100,10 @@ def _run(args: argparse.Namespace) -> int:
         otel=args.otel,
         transport=args.transport,
         python=args.python,
+        mode="force" if args.otel == "main" else args.mode,
         label=args.label or args.otel,
+        core_ref=args.core_ref,
+        contrib_ref=args.contrib_ref,
     )
     result = run_cell(cell, timeout=args.timeout)
     text = json.dumps(result, indent=2)

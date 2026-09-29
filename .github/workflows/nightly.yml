@@ -41,8 +41,12 @@ jobs:
           OTEL: ${{ matrix.otel }}
           TRANSPORT: ${{ matrix.transport }}
           LABEL: ${{ matrix.label }}
+          MODE: ${{ matrix.mode }}
+          CORE_REF: ${{ matrix.core_ref }}
+          CONTRIB_REF: ${{ matrix.contrib_ref }}
         run: >
           uv run otel-canary run --sdk "$SDK" --otel "$OTEL" --transport "$TRANSPORT"
+          --mode "$MODE" --core-ref "$CORE_REF" --contrib-ref "$CONTRIB_REF"
           --label "$LABEL" --output "results/$CELL_ID.json" --exit-zero
       - uses: actions/upload-artifact@v7
         with:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
@@ -45,7 +46,10 @@ def _log_reason(text: str, keywords: tuple[str, ...]) -> str:
     uv wraps the resolver's explanation over indented lines, so those are joined onto the match.
     """
     raw = text.splitlines()
-    cleaned = [line.strip().lstrip("×╰─▶ ").strip() for line in raw]
+    cleaned = [
+        re.sub(r"^(?:caused by|cause):\s*", "", line.strip().lstrip("×╰─▶ ").strip(), flags=re.I)
+        for line in raw
+    ]
     candidates = [i for i, line in enumerate(cleaned) if line and not line.startswith(_NOISE)]
     for keyword in keywords:  # keywords are in order of preference
         for i in candidates:

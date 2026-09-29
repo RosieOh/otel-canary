@@ -14,7 +14,14 @@ from typing import Any
 
 from otel_canary.adapters import ADAPTERS, RUNNER, AdapterSpec
 from otel_canary.classify import AdapterOutcome, classify
-from otel_canary.install import create_and_install, otel_requirements
+from otel_canary.install import (
+    InstallOutcome,
+    create_and_install,
+    force_overrides,
+    main_overrides,
+    otel_requirements,
+    otel_stack_error,
+)
 from otel_canary.receivers import GRPCReceiver, HTTPReceiver
 
 
@@ -25,9 +32,23 @@ class Cell:
     otel: str  # OpenTelemetry Python release, e.g. "1.45.0"
     transport: str = "http"
     python: str = "3.12"
+    # "respect-pins" installs what users get; "force" overrides the SDK's OpenTelemetry bounds.
     mode: str = "respect-pins"
     # The OTel version's role in the matrix ("previous", "latest", "main"); results are compared by it.
     label: str = ""
+    # With otel="main": the core and contrib commits to install.
+    core_ref: str = ""
+    contrib_ref: str = ""
+
+
+def install_plan(cell: Cell) -> tuple[list[str], list[str] | None]:
+    """Requirements and overrides for a cell. main and force install through overrides."""
+    grpc_exporter = ["opentelemetry-exporter-otlp-proto-grpc"] if cell.transport == "grpc" else []
+    if cell.otel == "main":
+        return [cell.sdk, *grpc_exporter], main_overrides(cell.core_ref or "main", cell.contrib_ref or "main")
+    if cell.mode == "force":
+        return [cell.sdk, *grpc_exporter], force_overrides(cell.otel)
+    return [cell.sdk, *otel_requirements(cell.otel, cell.transport)], None
 
 
 def _cell_env(endpoint: str, transport: str) -> dict[str, str]:
@@ -79,8 +100,16 @@ def run_cell(cell: Cell, timeout: float = 180) -> dict[str, Any]:
     received = None
     with tempfile.TemporaryDirectory(prefix="otel-canary-") as tmp:
         workdir = Path(tmp)
-        requirements = [cell.sdk, *otel_requirements(cell.otel, cell.transport)]
-        install = create_and_install(workdir, cell.python, requirements)
+        requirements, overrides = install_plan(cell)
+        install = create_and_install(workdir, cell.python, requirements, overrides)
+        if overrides and install.status == "ok" and install.python is not None:
+            error = otel_stack_error(install.python, cell.transport)
+            if error:
+                install = InstallOutcome(
+                    "infra",
+                    versions=install.versions,
+                    log=f"the overridden OpenTelemetry packages fail on their own: {error}",
+                )
         if install.status == "ok" and install.python is not None:
             receiver_cm = (
                 GRPCReceiver() if cell.transport == "grpc" else HTTPReceiver(get_responses=spec.get_responses)
@@ -91,7 +120,9 @@ def run_cell(cell: Cell, timeout: float = 180) -> dict[str, Any]:
                 )
                 time.sleep(0.3)  # let a request that is still in flight land
                 received = receiver.log
-    verdict = classify(install, adapter_outcome, received, spec, transport=cell.transport)
+    verdict = classify(
+        install, adapter_outcome, received, spec, used_overrides=bool(overrides), transport=cell.transport
+    )
 
     adapter_log = ""
     if adapter_outcome is not None:

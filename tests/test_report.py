@@ -69,3 +69,29 @@ def test_writes_the_site(tmp_path):
     page = (tmp_path / "site" / "index.html").read_text()
     assert "&lt;script&gt;" in page and "<script>x" not in page
     assert json.loads((tmp_path / "site" / "badges" / "phoenix.json").read_text())["message"] == "pass"
+
+
+def test_main_breakage_links_the_commits_since_the_previous_run():
+    def main_result(status, core, contrib):
+        result = _result(label="main", status=status)
+        result["cell"].update(otel="main", mode="force", core_ref=core, contrib_ref=contrib)
+        return result
+
+    previous = [main_result("PASS", "a" * 40, "b" * 40)]
+    current = [main_result("FAIL", "c" * 40, "b" * 40)]
+
+    [change] = report.changes(previous, current, "2026-09-29")
+
+    assert change["kind"] == "broke"
+    assert f"opentelemetry-python/compare/{'a' * 40}...{'c' * 40}" in change["body"]
+    assert "contrib changes" not in change["body"]  # contrib didn't move
+    assert f"--otel main --transport http --core-ref {'c' * 40}" in change["body"]
+
+
+def test_a_cell_new_to_the_matrix_sets_its_baseline():
+    previous = [_result(status="PASS")]
+    current = [_result(status="PASS"), _result(label="main", status="FAIL")]
+
+    [change] = report.changes(previous, current, "2026-09-29")
+
+    assert (change["key"], change["kind"], change["from"]) == ("phoenix:http:main", "info", None)

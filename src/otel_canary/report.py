@@ -22,6 +22,12 @@ BADGE_COLORS = {
     "INFRA": "yellow",
 }
 REPO_URL = "https://github.com/RosieOh/otel-canary"
+COLUMN_TITLES = {
+    "previous": "previous release",
+    "latest": "latest release",
+    "latest-force": "latest, SDK bounds ignored",
+    "main": "main (unreleased)",
+}
 
 
 def cell_key(result: dict[str, Any]) -> str:
@@ -33,8 +39,41 @@ def load_results(directory: Path) -> list[dict[str, Any]]:
     return [json.loads(path.read_text()) for path in sorted(directory.glob("*.json"))]
 
 
+CORE_COMPARE = "https://github.com/open-telemetry/opentelemetry-python/compare/{old}...{new}"
+CONTRIB_COMPARE = "https://github.com/open-telemetry/opentelemetry-python-contrib/compare/{old}...{new}"
+
+
 def _repro(cell: dict[str, Any]) -> str:
-    return f"uv run otel-canary run --sdk {cell['sdk']} --otel {cell['otel']} --transport {cell['transport']}"
+    command = (
+        f"uv run otel-canary run --sdk {cell['sdk']} --otel {cell['otel']} --transport {cell['transport']}"
+    )
+    if cell["otel"] == "main":
+        command += (
+            f" --core-ref {cell.get('core_ref') or 'main'} --contrib-ref {cell.get('contrib_ref') or 'main'}"
+        )
+    elif cell.get("mode") == "force":
+        command += " --mode force"
+    return command
+
+
+def _otel_text(cell: dict[str, Any]) -> str:
+    if cell["otel"] == "main":
+        return f"main (core {cell.get('core_ref', '')[:7]}, contrib {cell.get('contrib_ref', '')[:7]})"
+    return cell["otel"] + (" (force)" if cell.get("mode") == "force" else "")
+
+
+def _compare_links(old: dict[str, Any], new: dict[str, Any]) -> list[str]:
+    """Commits that landed on main between two runs, for a main cell that changed status."""
+    links = []
+    for key, template, name in (
+        ("core_ref", CORE_COMPARE, "core"),
+        ("contrib_ref", CONTRIB_COMPARE, "contrib"),
+    ):
+        if old.get(key) and new.get(key) and old[key] != new[key]:
+            links.append(
+                f"- {name} changes since the previous run: {template.format(old=old[key], new=new[key])}"
+            )
+    return links
 
 
 def changes(previous: list[dict[str, Any]], current: list[dict[str, Any]], date: str) -> list[dict[str, Any]]:
@@ -50,7 +89,9 @@ def changes(previous: list[dict[str, Any]], current: list[dict[str, Any]], date:
         if old == new:
             continue
         cell = result["cell"]
-        if new in BROKEN and old not in BROKEN:
+        if old is None:
+            kind = "info"  # a cell that's new to the matrix sets its own baseline
+        elif new in BROKEN and old not in BROKEN:
             kind = "broke"
         elif old in BROKEN and new == "PASS":
             kind = "recovered"
@@ -66,7 +107,7 @@ def changes(previous: list[dict[str, Any]], current: list[dict[str, Any]], date:
                     f"**{old or 'new'} → {new}** on {date}",
                     "",
                     f"- SDK: `{cell['sdk']}`",
-                    f"- OpenTelemetry: `{cell['otel']}` ({cell.get('label') or 'pinned'})",
+                    f"- OpenTelemetry: `{_otel_text(cell)}` ({cell.get('label') or 'pinned'})",
                     f"- Transport: {cell['transport']}",
                     f"- Reason: `{result['reason']}`",
                     "",
@@ -78,6 +119,7 @@ def changes(previous: list[dict[str, Any]], current: list[dict[str, Any]], date:
                     "</details>",
                     "",
                     f"Reproduce: `{_repro(cell)}`",
+                    *(["", *_compare_links(before[key]["cell"], cell)] if key in before else []),
                 ]
             )
         found.append({"key": key, "kind": kind, "from": old, "to": new, "title": title, "body": body})
@@ -85,19 +127,24 @@ def changes(previous: list[dict[str, Any]], current: list[dict[str, Any]], date:
 
 
 def badges(current: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
-    """A shields.io endpoint per adapter: the worst status across transports on the latest release."""
+    """shields.io endpoints: `<adapter>` for the latest release, `<adapter>-main` for main.
+
+    Each shows the worst status across the adapter's transports.
+    """
     out = {}
     for name in ADAPTERS:
-        latest = [r for r in current if r["cell"]["adapter"] == name and r["cell"].get("label") == "latest"]
-        if not latest:
-            continue
-        status = min((r["status"] for r in latest), key=SEVERITY.index)
-        out[name] = {
-            "schemaVersion": 1,
-            "label": f"otel {latest[0]['cell']['otel']}",
-            "message": status.lower(),
-            "color": BADGE_COLORS[status],
-        }
+        for label, suffix in (("latest", ""), ("main", "-main")):
+            cells = [r for r in current if r["cell"]["adapter"] == name and r["cell"].get("label") == label]
+            if not cells:
+                continue
+            status = min((r["status"] for r in cells), key=SEVERITY.index)
+            otel = cells[0]["cell"]["otel"]
+            out[name + suffix] = {
+                "schemaVersion": 1,
+                "label": "otel main" if otel == "main" else f"otel {otel}",
+                "message": status.lower(),
+                "color": BADGE_COLORS[status],
+            }
     return out
 
 
@@ -134,7 +181,7 @@ def _cell_html(result: dict[str, Any] | None) -> str:
     log = ((result.get("logs") or {}).get("adapter") or "").strip()[-2000:]
     parts = [
         f'<td><span class="badge {status}">{status}</span> ',
-        f'<span class="small muted">{html.escape(cell["sdk"].split("==")[-1])} · otel {html.escape(cell["otel"])}</span>',
+        f'<span class="small muted">{html.escape(cell["sdk"].split("==")[-1])} · otel {html.escape(_otel_text(cell))}</span>',
         f'<div class="small">{html.escape(result["reason"])}</div>',
         "<details><summary>details</summary>",
         f'<div class="small">reproduce: <code>{html.escape(_repro(cell))}</code></div>',
@@ -156,7 +203,7 @@ def render_html(current: list[dict[str, Any]], found: list[dict[str, Any]], gene
                 f"<tr><td><strong>{html.escape(spec.package)}</strong>"
                 f'<div class="small muted">{transport}</div></td>{cells}</tr>'
             )
-    header = "".join(f"<th>{label}</th>" for label in LABELS)
+    header = "".join(f"<th>{COLUMN_TITLES.get(label, label)}</th>" for label in LABELS)
     if found:
         items = "".join(
             f'<li><span class="badge {html.escape(c["to"])}">{html.escape(c["to"])}</span> '

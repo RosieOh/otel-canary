@@ -46,3 +46,38 @@ def test_records_the_installed_versions(tmp_path):
     assert outcome.status == "ok"
     assert outcome.versions["arize-phoenix-otel"] == "0.17.2"
     assert outcome.versions["opentelemetry-sdk"] == "1.45.0"
+
+
+def test_contrib_version_follows_the_core_release():
+    from otel_canary.install import contrib_version
+
+    assert contrib_version("1.45.0") == "0.66b0"
+    assert contrib_version("1.42.1") == "0.63b1"
+
+
+def test_force_overrides_move_core_and_contrib_together():
+    from otel_canary.install import force_overrides
+
+    pins = force_overrides("1.45.0")
+    assert "opentelemetry-sdk==1.45.0" in pins
+    assert "opentelemetry-exporter-otlp-proto-grpc==1.45.0" in pins
+    assert "opentelemetry-semantic-conventions==0.66b0" in pins
+    assert "opentelemetry-instrumentation==0.66b0" in pins
+
+
+def test_main_overrides_keep_the_transport_extra():
+    from otel_canary.install import main_overrides
+
+    lines = main_overrides("abc123", "def456")
+    transport = next(line for line in lines if line.startswith("opentelemetry-exporter-http-transport"))
+    assert transport.startswith("opentelemetry-exporter-http-transport[urllib3] @ git+")
+    assert "@abc123#subdirectory=exporter/opentelemetry-exporter-http-transport" in transport
+    assert any("opentelemetry-python-contrib.git@def456" in line for line in lines)
+
+
+def test_freeze_shows_git_installs_as_commits():
+    output = (
+        "opentelemetry-sdk @ git+https://github.com/open-telemetry/opentelemetry-python.git"
+        "@0123456789abcdef0123#subdirectory=opentelemetry-sdk\n"
+    )
+    assert parse_freeze(output) == {"opentelemetry-sdk": "git@0123456789ab"}

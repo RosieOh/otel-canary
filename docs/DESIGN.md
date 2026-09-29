@@ -208,7 +208,7 @@ otel-canary/
 | **M0** | 완료 | 스파이크: 알려진 사례 재현, main 설치 검증 | §17 |
 | **M1** | 완료 (2026-09-29) | CLI, HTTP 수신기, 어댑터 3개(Phoenix, Langfuse, traceloop), 로컬 실행 | 골든 케이스 4개 통과 (`tests/test_golden.py`) |
 | **M2** | 구현 완료 (2026-09-29) | gRPC 수신기, 어댑터 5개, nightly Actions, JSON 결과, 정적 대시보드, 상태 변화 이슈 | 3일 연속 무인 실행, 가짜 경보 0건 (관찰 중) |
-| **M3** | 3~4주차 | `force` 모드와 `BLOCKED`, main 커밋 범위 첨부, 배지 | Weave·Logfire 상한이 여전히 필요한지 판정 |
+| **M3** | 구현 완료 (2026-09-29) | `force` 모드, main 셀(커밋 고정)과 비교 링크, override 설치 검증, 배지 | Weave·Logfire 상한이 여전히 필요한지 판정 → 둘 다 필요 |
 | **M4** | 이후 | 정적 결합 스캔, 자동 bisect, 어댑터 확장, 케이스 스터디 글 | — |
 
 ## 14. 위험과 대응

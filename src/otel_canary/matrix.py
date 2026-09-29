@@ -4,14 +4,17 @@ from __future__ import annotations
 
 import json
 import ssl
+import subprocess
 import urllib.request
 from pathlib import Path
 from typing import Any
 
 from otel_canary.adapters import ADAPTERS
+from otel_canary.install import CONTRIB_REPO, CORE_REPO
 
 PYPI_JSON = "https://pypi.org/pypi/{name}/json"
-LABELS = ("previous", "latest")
+# Dashboard columns, in order. "latest-force" ignores the SDK's bounds; "main" is unreleased code.
+LABELS = ("previous", "latest", "latest-force", "main")
 
 
 def _ssl_context() -> ssl.SSLContext:
@@ -54,28 +57,47 @@ def otel_versions(releases: list[str]) -> dict[str, str]:
     return {"previous": latest_final(older), "latest": latest}
 
 
+def main_refs() -> dict[str, str]:
+    """Today's commit on main for core and contrib, so every main cell in a run tests the same code."""
+    refs = {}
+    for key, repo in (("core_ref", CORE_REPO), ("contrib_ref", CONTRIB_REPO)):
+        out = subprocess.run(
+            ["git", "ls-remote", repo, "refs/heads/main"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=True,
+        ).stdout
+        refs[key] = out.split()[0]
+    return refs
+
+
 def plan(
     otel: dict[str, str] | None = None,
     sdk_versions: dict[str, str] | None = None,
+    refs: dict[str, str] | None = None,
     fetch: Any = fetch_releases,
 ) -> list[dict[str, str]]:
-    """One cell per adapter, transport and OTel label, each SDK at its latest release."""
+    """One cell per adapter, transport and label, each SDK at its latest release."""
     otel = otel or otel_versions(fetch("opentelemetry-sdk"))
     sdk_versions = sdk_versions or {
         spec.name: latest_final(fetch(spec.package)) for spec in ADAPTERS.values()
     }
+    refs = refs or main_refs()
     cells = []
     for spec in ADAPTERS.values():
         for transport in sorted(spec.transports):
             for label in LABELS:
-                cells.append(
-                    {
-                        "id": f"{spec.name}-{transport}-{label}",
-                        "adapter": spec.name,
-                        "sdk": f"{spec.package}=={sdk_versions[spec.name]}",
-                        "otel": otel[label],
-                        "label": label,
-                        "transport": transport,
-                    }
-                )
+                cell = {
+                    "id": f"{spec.name}-{transport}-{label}",
+                    "adapter": spec.name,
+                    "sdk": f"{spec.package}=={sdk_versions[spec.name]}",
+                    "otel": "main" if label == "main" else otel[label.removesuffix("-force")],
+                    "label": label,
+                    "transport": transport,
+                    "mode": "force" if label in ("latest-force", "main") else "respect-pins",
+                    "core_ref": refs["core_ref"] if label == "main" else "",
+                    "contrib_ref": refs["contrib_ref"] if label == "main" else "",
+                }
+                cells.append(cell)
     return cells

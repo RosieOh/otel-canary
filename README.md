@@ -17,3 +17,7 @@ LLM 관측성 SDK가 OpenTelemetry Python의 **새 버전과 main 브랜치**에
 OpenTelemetry 프로젝트나 CNCF와 관계없는 개인 프로젝트입니다. 이름의 "otel"은 테스트 대상을 가리킬 뿐, 공식 도구라는 뜻이 아닙니다.
 
 > This is an independent project, not affiliated with or endorsed by the OpenTelemetry project or the CNCF.
+
+## 라이선스
+
+[Apache License 2.0](LICENSE)

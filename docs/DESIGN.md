@@ -195,7 +195,7 @@ otel-canary/
 
 ## 12. GitHub Actions 설계
 
-- **트리거**: 매일 UTC 21:00(한국 시간 오전 6시) cron, 그리고 수동 실행(`workflow_dispatch`)
+- **트리거**: 매일 UTC 21:17(한국 시간 오전 6시 17분) cron, 그리고 수동 실행(`workflow_dispatch`). 정각을 피한 이유: GitHub는 부하가 몰리는 정각의 예약 실행을 늦게 시작합니다. `0 21`로 걸었던 첫 예약 실행(2026-09-30)은 3시간 늦게 시작했습니다.
 - **job 1 `plan`**: `previous`/`latest` 버전을 계산하고 main SHA를 기록한 뒤 매트릭스 JSON을 출력합니다.
 - **job 2 `run`**: (SDK, OTel)마다 job 하나씩 돌고, job 안에서 모드와 전송 방식을 반복합니다. timeout은 10분이고 uv 캐시를 씁니다.
 - **job 3 `report`**: 결과를 합쳐 이전 실행과 비교한 뒤, 이슈를 만들거나 갱신하고 대시보드를 배포합니다.

@@ -2,7 +2,9 @@ name: Nightly
 
 on:
   schedule:
-    - cron: "0 21 * * *" # 06:00 KST
+    # 06:17 KST. Off the hour on purpose: GitHub delays scheduled runs at :00 under load
+    # (the first run at "0 21" started three hours late).
+    - cron: "17 21 * * *"
   workflow_dispatch:
 
 permissions:

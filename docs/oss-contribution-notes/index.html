@@ -63,7 +63,7 @@
 
     <section id="all">
       <h2><span class="num">02</span>전체 기여 현황</h2>
-      <p>2026년 9월 29일 기준입니다. 이 문서는 위 두 건을 자세히 다룹니다. OpenLLMetry와 Logfire 건은 otel-canary를 준비하며 SDK를 조사하다 찾은 것으로, <a href="https://github.com/RosieOh/otel-canary/wiki" target="_blank" rel="noopener">otel-canary 위키</a>에 정리했습니다. LiteLLM과 valkey-helm은 직접 운영하던 프로젝트(RoundHouse)에서 발견한 문제입니다.</p>
+      <p>2026년 10월 6일 기준입니다. 이 문서는 위 두 건을 자세히 다룹니다. OpenLLMetry와 Logfire 건은 otel-canary를 준비하며 SDK를 조사하다 찾은 것으로, <a href="https://github.com/RosieOh/otel-canary/wiki" target="_blank" rel="noopener">otel-canary 위키</a>에 정리했습니다. LiteLLM과 valkey-helm은 직접 운영하던 프로젝트(RoundHouse)에서 발견한 문제입니다.</p>
       <div class="table-wrap">
         <table>
           <thead>
@@ -85,13 +85,13 @@
             <tr>
               <td>OpenLLMetry</td>
               <td><a href="https://github.com/traceloop/openllmetry/issues/4526" target="_blank" rel="noopener">이슈 #4526</a> · <a href="https://github.com/traceloop/openllmetry/pull/4527" target="_blank" rel="noopener">PR #4527</a></td>
-              <td>traceloop-sdk가 <code>requests</code>·<code>httpx</code>를 선언하지 않아 깨끗한 환경에서 import가 실패하던 문제 보고와 수정</td>
-              <td><span class="badge warn"><span class="dot"></span>리뷰 대기</span></td>
+              <td>traceloop-sdk가 <code>requests</code>·<code>httpx</code>를 선언하지 않아 깨끗한 환경에서 import가 실패하던 문제 보고와 수정. 같은 변경이 다른 기여자의 <a href="https://github.com/traceloop/openllmetry/pull/4543" target="_blank" rel="noopener">#4543</a>으로 먼저 머지되어 PR은 닫음</td>
+              <td><span class="badge ok"><span class="dot"></span>이슈 해결</span></td>
             </tr>
             <tr>
               <td>Pydantic Logfire</td>
               <td><a href="https://github.com/pydantic/logfire/issues/2497" target="_blank" rel="noopener">이슈 #2497</a></td>
-              <td>OTel 1.45의 전송 계층이 Logfire의 재시도·디스크 재시도를 우회하는 문제 보고 (장애 주입 실험)</td>
+              <td>OTel 1.45의 전송 계층이 Logfire의 재시도·디스크 재시도를 우회하는 문제 보고 (장애 주입 실험). 이슈의 제안대로 고치는 PR(<a href="https://github.com/pydantic/logfire/pull/2503" target="_blank" rel="noopener">#2503</a>)이 다른 기여자에게서 올라옴</td>
               <td><span class="badge warn"><span class="dot"></span>분류 대기</span></td>
             </tr>
             <tr>
@@ -109,8 +109,8 @@
             <tr>
               <td>valkey-helm</td>
               <td><a href="https://github.com/valkey-io/valkey-helm/pull/250" target="_blank" rel="noopener">PR #250</a></td>
-              <td>메트릭 exporter 컨테이너의 기본 보안 설정 강화</td>
-              <td><span class="badge warn"><span class="dot"></span>리뷰 대기</span></td>
+              <td>메트릭 exporter 컨테이너의 기본 보안 설정 강화. 메인테이너가 1.0 변경 PR(<a href="https://github.com/valkey-io/valkey-helm/pull/272" target="_blank" rel="noopener">#272</a>)에 포함</td>
+              <td><span class="badge warn"><span class="dot"></span>#272 머지 대기</span></td>
             </tr>
           </tbody>
         </table>

@@ -30,7 +30,7 @@
     <h1>OIDC 연결 실패 메시지에 "어느 URL인지" 알려주기</h1>
     <p class="lead">오류 메시지 한 줄을 고친 작은 변경이지만, 운영자가 장애 원인을 찾는 시간과 비밀 정보 노출을 함께 다룬 사례입니다.</p>
     <div class="badges">
-      <span class="badge warn"><span class="dot"></span>리뷰 반영 중</span>
+      <span class="badge ok"><span class="dot"></span>머지됨 · v2.5.0-rc.1</span>
       <span class="badge">Go</span>
       <span class="badge">DCO</span>
       <span class="badge">kind/fix</span>
@@ -67,7 +67,7 @@
         <ul class="tldr">
           <li><b>문제</b><span>로그인 공급자(IdP)의 설정을 가져오지 못하면 TrafficPolicy 상태에 <code>unexpected status code 503</code>만 떠서, 공급자가 여러 개일 때 <strong>어느 쪽이 죽었는지</strong> 알 수 없었습니다.</span></li>
           <li><b>해결</b><span>오류 메시지에 discovery URL을 넣되, URL 안의 비밀번호는 <code>url.Redacted()</code>로 가렸습니다. 기존 로그의 <code>issuer_uri</code> 필드에도 같은 마스킹을 적용했습니다.</span></li>
-          <li><b>상태</b><span>CI 검사 30개가 모두 통과했고, 리뷰어의 제안(어느 GatewayExtension인지도 표시)을 반영해 다시 리뷰를 기다리고 있습니다(2026-10-12 기준).</span></li>
+          <li><b>결과</b><span>리뷰어의 제안(어느 GatewayExtension인지도 표시)까지 반영해 2026-10-15에 머지됐습니다. v2.5.0-beta.2와 v2.5.0-rc.1 릴리스 노트에 실렸습니다.</span></li>
         </ul>
       </section>
 
@@ -285,6 +285,8 @@ r.NotContains(err.Error(), "s3cret", "the password should be masked")</code></pr
           <li><time>2026-10-06 11:37</time>일주일 동안 CI 승인이 없어 정중히 리마인드합니다. 다음 날 리뷰어(davidjumani)가 지정됩니다.</li>
           <li><time>2026-10-09 06:48</time>리뷰어가 main을 브랜치에 합치고 CI를 돌립니다. 검사 30개가 모두 통과하고, "실패한 GatewayExtension의 이름도 status에 보여주자"는 리뷰 의견이 달립니다.</li>
           <li><time>2026-10-12</time>제안을 반영합니다. <code>FetchGatewayExtension</code>이 오류 앞에 <code>네임스페이스/이름</code>을 붙이게 했고, 같은 함수를 쓰는 ExtAuth·ExtProc·RateLimit·JWT의 기대 출력 4개도 함께 갱신했습니다. 자세한 내용은 <a href="https://github.com/RosieOh/otel-canary/wiki/kgateway-14769" target="_blank" rel="noopener">위키</a>에 있습니다.</li>
+          <li><time>2026-10-15 03:00</time>리뷰어가 승인하고 머지합니다. PR을 낸 지 16일, 리뷰 반영 뒤 2일 반 만입니다. 이슈 #14750도 닫힙니다.</li>
+          <li><time>2026-10-28</time>v2.5.0-rc.1 릴리스 노트에 실립니다(v2.5.0-beta.2부터 포함).</li>
         </ol>
 
         <h3>kgateway만의 규칙 세 가지</h3>
@@ -383,7 +385,7 @@ in the status of TrafficPolicies that reference the GatewayExtension
         <a href="phoenix-16549.html">← Phoenix #16549</a>
         <a href="index.html">개요 →</a>
       </div>
-      <div class="footer">기준: 2026년 10월 12일 (한국 시간). PR은 리뷰 중이라 이후 바뀔 수 있습니다.</div>
+      <div class="footer">기준: 2026년 10월 28일 (한국 시간).</div>
     </main>
   </div>
 </div>
